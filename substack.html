@@ -924,10 +924,11 @@
 
             // Buttons
             const browsers = ['chrome', 'safari', 'firefox', 'edge'];
-            let btns = `<div style="display:flex; gap:10px; margin-bottom:10px;">`;
-            browsers.forEach(b => {
+            let btns = `<div style="display:flex; margin-bottom:10px;">`;
+            browsers.forEach((b, i) => {
                 const active = b === browser ? 'background:#000; color:#fff;' : 'background:#eee; color:#000;';
-                btns += `<button onclick="showBrowserInstructions('${b}')" style="padding:5px 10px; border:1px solid #000; border-radius:4px; cursor:pointer; ${active}">${b.charAt(0).toUpperCase() + b.slice(1)}</button>`;
+                const marginLeft = i > 0 ? 'margin-left:10px;' : '';
+                btns += `<button onclick="showBrowserInstructions('${b}')" style="padding:5px 10px; border:1px solid #000; border-radius:4px; cursor:pointer; ${marginLeft}${active}">${b.charAt(0).toUpperCase() + b.slice(1)}</button>`;
             });
             btns += `</div>`;
 

@@ -755,10 +755,24 @@
 
 
         // --- BLACKLIST LOGIC ---
+        const BLACKLIST_CACHE_KEY = 'rekindle_blacklist_cache';
+        const BLACKLIST_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+
         async function loadBlacklist() {
             try {
+                const cached = sessionStorage.getItem(BLACKLIST_CACHE_KEY);
+                if (cached) {
+                    const { ids, ts } = JSON.parse(cached);
+                    if (Date.now() - ts < BLACKLIST_CACHE_TTL) {
+                        ids.forEach(id => blacklistedTuids.add(id));
+                        console.log(`Loaded ${blacklistedTuids.size} blacklisted games (cached)`);
+                        return;
+                    }
+                }
                 const snapshot = await db.collection('interactive_blacklist').get();
-                snapshot.forEach(doc => blacklistedTuids.add(doc.id));
+                const ids = [];
+                snapshot.forEach(doc => { blacklistedTuids.add(doc.id); ids.push(doc.id); });
+                sessionStorage.setItem(BLACKLIST_CACHE_KEY, JSON.stringify({ ids, ts: Date.now() }));
                 console.log(`Loaded ${blacklistedTuids.size} blacklisted games`);
             } catch (e) {
                 console.error('Failed to load blacklist:', e);

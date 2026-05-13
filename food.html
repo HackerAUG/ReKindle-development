@@ -559,11 +559,11 @@
         function renderView() {
             // Update Header Label
             const lang = document.documentElement.lang || 'en';
-            const dateStr = window.rekindleFormatWallDate ? 
-                window.rekindleFormatWallDate(currentDate, { weekday: 'short', month: 'short', day: 'numeric' }) : 
-                (window.rekindleFormatTime ? 
-                    window.rekindleFormatTime(currentDate, { weekday: 'short', month: 'short', day: 'numeric' }) : 
-                    currentDate.toLocaleDateString(lang, { weekday: 'short', month: 'short', day: 'numeric' }));
+            const dateStr = (function(zd) {
+                var days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+                var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+                return days[zd.getDay()] + ', ' + months[zd.getMonth()] + ' ' + zd.getDate();
+            })(typeof rekindleGetZonedDate === 'function' ? rekindleGetZonedDate(currentDate) : currentDate);
             
             const today = window.rekindleGetZonedDate ? window.rekindleGetZonedDate() : new Date();
             today.setHours(0, 0, 0, 0);

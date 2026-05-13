@@ -253,8 +253,8 @@
             align-items: center;
             margin: 20px 0;
             width: 100%;
-            gap: 20px;
         }
+        .board-center > * + * { margin-left: 20px; }
         
         .pile-label {
             font-size: 0.8rem;
@@ -267,11 +267,11 @@
             display: flex;
             flex-wrap: wrap;
             justify-content: center;
-            gap: 10px;
             width: 100%;
             padding: 10px;
             border-bottom: 2px solid black;
         }
+        .opponents-container > * + * { margin-left: 10px; }
 
         .opponent {
             border: 2px solid black;
@@ -294,10 +294,14 @@
         .color-picker {
             display: flex;
             flex-wrap: wrap;
-            gap: 10px;
             justify-content: center;
             margin-top: 15px;
         }
+        .color-picker > * + * { margin-left: 10px; }
+        .status-bar-inner { display: flex; align-items: center; justify-content: center; }
+        .status-bar-inner > * + * { margin-left: 10px; }
+        .opponent-card { display: flex; flex-direction: column; align-items: center; }
+        .opponent-card > * + * { margin-top: 5px; }
         
         /* MODALS */
         .modal-overlay {
@@ -623,9 +627,9 @@
             const listDiv = document.getElementById('lobby-players');
             
             listDiv.innerHTML = players.map(p => `
-                <div style="display:flex; align-items:center; gap:10px; font-weight:bold; font-size:1.1rem;">
+                <div style="display:flex; align-items:center; font-weight:bold; font-size:1.1rem;">
                     <canvas id="avatar-${p.uid}" width="32" height="32" style="border:2px solid black; width:32px; height:32px; image-rendering:-webkit-optimize-contrast; image-rendering:crisp-edges; image-rendering:pixelated;"></canvas>
-                    ${p.name}
+                    <span style="margin-left:10px;">${p.name}</span>
                 </div>
             `).join('');
             
@@ -848,7 +852,7 @@
             const turnName = turnId === currentUser.uid ? "Your Turn!" : `${gameState.players[turnId].name}'s Turn`;
             const turnStatusBar = document.getElementById('status-bar');
             turnStatusBar.innerHTML = `
-                <div style="display:flex; align-items:center; justify-content:center; gap:10px;">
+                <div class="status-bar-inner">
                     <canvas id="status-avatar" width="24" height="24" style="border:1px solid black; width:24px; height:24px; image-rendering:pixelated; background:white;"></canvas>
                     ${turnName}
                 </div>
@@ -895,7 +899,7 @@
                     const count = ((gameState.hands || {})[uid] || []).length;
                     const isActive = (uid === turnId);
                     oppDiv.innerHTML += `
-                        <div class="opponent ${isActive ? 'active-turn' : ''}" style="display:flex; flex-direction:column; align-items:center; gap:5px;">
+                        <div class="opponent opponent-card ${isActive ? 'active-turn' : ''}" style="display:flex; flex-direction:column; align-items:center;">
                             <canvas id="game-avatar-${uid}" width="32" height="32" style="border:2px solid black; width:32px; height:32px; image-rendering:pixelated; background:white;"></canvas>
                             <div>${isActive ? '▶ ' : ''}${gameState.players[uid].name}</div>
                             <div style="font-size:0.8rem; font-weight:normal;">${count} cards</div>

@@ -484,6 +484,21 @@
     </div>
 
     <script>
+        // ALERT HELPER (replaces window.alert — not supported on Kindle)
+        function showAlert(msg, cb) {
+            var overlay = document.createElement('div');
+            overlay.className = 'modal-overlay active';
+            overlay.style.position = 'fixed';
+            overlay.style.zIndex = '10000';
+            var box = document.createElement('div');
+            box.className = 'modal-box';
+            box.style.maxWidth = '300px';
+            box.innerHTML = '<p style="margin-bottom:16px;">' + msg + '</p><button class="sys-btn">OK</button>';
+            overlay.appendChild(box);
+            document.body.appendChild(overlay);
+            box.querySelector('button').onclick = function () { overlay.remove(); if (cb) cb(); };
+        }
+
         // GLOBALS
         let currentFileArrayBuffer = null;
         let editorInstance = null;
@@ -516,7 +531,7 @@
             } else {
                 console.warn("User not signed in. Saving disabled.");
                 if (currentPath) {
-                    alert("Please sign in to view this document.");
+                    showAlert("Please sign in to view this document.");
                     hideLoading();
                 }
             }
@@ -570,7 +585,7 @@
                 loadFromUrl(url);
             } catch (error) {
                 console.error(error);
-                alert("Error downloading file: " + error.message);
+                showAlert("Error downloading file: " + error.message);
                 hideLoading();
             }
         }
@@ -588,7 +603,7 @@
                 })
                 .catch(err => {
                     console.error(err);
-                    alert("Failed to load document: " + err.message);
+                    showAlert("Failed to load document: " + err.message);
                     hideLoading();
                 });
         }
@@ -653,7 +668,7 @@
                     initEditor(html);
                 })
                 .catch(function (err) {
-                    alert("Conversion failed: " + err.message);
+                    showAlert("Conversion failed: " + err.message);
                     hideLoading();
                 });
         }
@@ -668,7 +683,7 @@
 
             // Verify CKEditor loaded
             if (typeof DecoupledEditor === 'undefined') {
-                alert("Editor library failed to load. Please check connection.");
+                showAlert("Editor library failed to load. Please check connection.");
                 hideLoading();
                 return;
             }
@@ -694,7 +709,7 @@
                 })
                 .catch(error => {
                     console.error(error);
-                    alert("Editor init failed: " + error);
+                    showAlert("Editor init failed: " + error);
                     hideLoading();
                 });
         }
@@ -962,7 +977,7 @@
                 hideLoading();
             } catch (error) {
                 console.error(error);
-                alert("Upload failed: " + error.message);
+                showAlert("Upload failed: " + error.message);
                 hideLoading();
                 throw error;
             }
@@ -1000,7 +1015,7 @@
             }).catch(err => {
                 if (err !== "Cancelled") {
                     console.error(err);
-                    alert("Save failed: " + err.message);
+                    showAlert("Save failed: " + err.message);
                 }
                 hideLoading();
                 throw err;

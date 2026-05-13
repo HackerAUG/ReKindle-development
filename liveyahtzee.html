@@ -597,9 +597,9 @@
             const players = Object.entries(gameState.players || {}).map(([uid, p]) => ({ uid, ...p })).sort((a,b) => a.joinedAt - b.joinedAt);
             const listDiv = document.getElementById('lobby-players');
             listDiv.innerHTML = players.map(p => `
-                <div style="display:flex; align-items:center; gap:10px; font-weight:bold; font-size:1.1rem; border-bottom:1px solid #eee; padding:5px 0;">
+                <div style="display:flex; align-items:center; font-weight:bold; font-size:1.1rem; border-bottom:1px solid #eee; padding:5px 0;">
                     <canvas id="avatar-${p.uid}" width="32" height="32" style="border:2px solid black; width:32px; height:32px; image-rendering:-webkit-optimize-contrast; image-rendering:crisp-edges; image-rendering:pixelated;"></canvas>
-                    ${p.name}
+                    <span style="margin-left:10px;">${p.name}</span>
                 </div>
             `).join('');
 
@@ -818,9 +818,9 @@
                 const isActive = uid === currentPlayerId;
                 const name = uid === currentUser.uid ? (window.t ? window.t('yahtzee.label.you', 'You') : 'You') : p.name;
                 return `<div class="opponent-score-row ${isActive ? 'active-turn' : ''}">
-                    <div style="display:flex; align-items:center; gap:8px;">
+                    <div style="display:flex; align-items:center;">
                         <canvas id="game-avatar-${uid}" width="24" height="24" style="border:1px solid black; width:24px; height:24px; image-rendering:pixelated;"></canvas>
-                        <span>${isActive ? '▶ ' : ''}${name}</span>
+                        <span style="margin-left:8px;">${isActive ? '▶ ' : ''}${name}</span>
                     </div>
                     <span>${p.total}</span>
                 </div>`;

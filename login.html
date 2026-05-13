@@ -106,7 +106,10 @@
         function log(msg, type) {
             var div = document.createElement('div');
             div.className = 'log-line ' + (type || '');
-            var time = new Date().toLocaleTimeString();
+            var time = (function(d) {
+                var zd = (typeof rekindleGetZonedDate === 'function') ? rekindleGetZonedDate(d) : d;
+                return (zd.getHours() % 12 || 12) + ':' + String(zd.getMinutes()).padStart(2,'0') + ' ' + (zd.getHours() >= 12 ? 'PM' : 'AM');
+            })(new Date());
             div.innerText = '[' + time + '] ' + msg;
             logElem.insertBefore(div, logElem.firstChild);
             if (type === 'error' && console.error) console.error(msg);
@@ -278,6 +281,7 @@
         setTimeout(runDiagnostics, 1000);
 
     </script>
+    <script src="js/time.js"></script>
 </body>
 
 </html>

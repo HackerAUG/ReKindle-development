@@ -1087,7 +1087,7 @@
                                     <div style="font-weight:bold;">${this.escapeHtml(other.displayName || other.handle)}</div>
                                     <div style="color:#555; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${this.escapeHtml((convo.lastMessage && convo.lastMessage.text) ? convo.lastMessage.text : '...')}</div>
                                 </div>
-                                <div style="font-size:0.8rem; color:#888;">${new Date(convo.lastMessage.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                                <div style="font-size:0.8rem; color:#888;">${(function(d) { var zd = (typeof rekindleGetZonedDate === 'function') ? rekindleGetZonedDate(d) : d; return (zd.getHours() % 12 || 12) + ':' + String(zd.getMinutes()).padStart(2,'0') + ' ' + (zd.getHours() >= 12 ? 'PM' : 'AM'); })(new Date(convo.lastMessage.sentAt))}</div>
                             </div>
                         `;
                         // TODO: Click to open conversation view (out of scope for now, just listing)
@@ -1225,7 +1225,7 @@
                 const likeCount = post.likeCount || 0;
 
                 // Time
-                const time = new Date(record.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                const time = (function(d) { var zd = (typeof rekindleGetZonedDate === 'function') ? rekindleGetZonedDate(d) : d; return (zd.getHours() % 12 || 12) + ':' + String(zd.getMinutes()).padStart(2,'0') + ' ' + (zd.getHours() >= 12 ? 'PM' : 'AM'); })(new Date(record.createdAt));
 
                 // Viewer state
                 const viewer = post.viewer || {};
@@ -1458,6 +1458,7 @@
             }
         };
     </script>
+    <script src="js/time.js"></script>
 </body>
 
 </html>

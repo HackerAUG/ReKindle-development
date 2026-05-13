@@ -593,6 +593,20 @@
     </div>
 
     <script>
+        // ALERT HELPER (replaces window.alert — not supported on Kindle)
+        function showAlert(msg, cb) {
+            var overlay = document.createElement('div');
+            overlay.className = 'modal-overlay active';
+            overlay.style.position = 'fixed';
+            overlay.style.zIndex = '10000';
+            var box = document.createElement('div');
+            box.className = 'modal-box';
+            box.innerHTML = '<p style="margin-bottom:16px;">' + msg + '</p><div class="modal-actions"><button class="sys-btn">OK</button></div>';
+            overlay.appendChild(box);
+            document.body.appendChild(overlay);
+            box.querySelector('button').onclick = function () { overlay.remove(); if (cb) cb(); };
+        }
+
         // --- Firebase Config & Init ---
         const firebaseConfig = {
             apiKey: "AIzaSyDY7x7vVmlYUyVZNLuCCmIQYa6PWFVfZqQ",
@@ -907,7 +921,7 @@
             // Prevent download/open for other types
             // alert("Preview not available for this file type.");
             // Actually, maybe we should just notify that they can use the menu to download?
-            alert("Preview not available. Use the menu (...) to download this file.");
+            showAlert("Preview not available. Use the menu (...) to download this file.");
         }
 
         function toggleView() {
@@ -954,14 +968,14 @@
             const fileExtension = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
 
             if (!validExtensions.includes(fileExtension)) {
-                alert("Upload failed: Only .doc and .docx files are allowed.");
+                showAlert("Upload failed: Only .doc and .docx files are allowed.");
                 input.value = '';
                 return;
             }
 
             // 1. Quota Check
             if (totalUsage + file.size > MAX_STORAGE_BYTES) {
-                alert(`Upload failed: Not enough space.\nFile size: ${formatSize(file.size)}\nSpace remaining: ${formatSize(MAX_STORAGE_BYTES - totalUsage)}`);
+                showAlert('Upload failed: Not enough space.<br>File size: ' + formatSize(file.size) + '<br>Space remaining: ' + formatSize(MAX_STORAGE_BYTES - totalUsage));
                 input.value = ''; // Reset
                 return;
             }
@@ -978,7 +992,7 @@
                 // Reload list
                 loadFiles();
             } catch (err) {
-                alert("Upload failed: " + err.message);
+                showAlert("Upload failed: " + err.message);
             } finally {
                 document.querySelector('.toolbar button').innerHTML = originalText; // Restore icon
                 input.value = '';
@@ -1006,7 +1020,7 @@
                 document.getElementById('delete-btn').style.display = 'none';
                 loadFiles();
             } catch (err) {
-                alert("Delete failed: " + err.message);
+                showAlert("Delete failed: " + err.message);
                 closeDeleteModal();
             }
         }

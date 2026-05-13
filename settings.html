@@ -472,6 +472,7 @@
         .modal-btns>*+* {
             margin-left: 10px;
         }
+        .settings-btn-row > * + * { margin-left: 10px; }
 
         .modal-btn {
             background: white;
@@ -2054,7 +2055,7 @@
             <label class="dav-label" for="pwd-confirm">Confirm New Password</label>
             <input type="password" id="pwd-confirm" class="dav-input" placeholder="Confirm new password" style="margin-bottom:15px;">
             <div id="pwd-error" style="color:red; font-size:0.8rem; margin-bottom:10px; display:none;"></div>
-            <div style="display:flex; gap:10px;">
+            <div class="settings-btn-row" style="display:flex;">
                 <button class="modal-btn" onclick="closePasswordModal()" style="flex:1;">Cancel</button>
                 <button class="modal-btn" onclick="submitPasswordChange()" style="flex:1; background:black; color:white;">Save</button>
             </div>

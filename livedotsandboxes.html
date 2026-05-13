@@ -266,13 +266,13 @@
             </div>
             
             <div id="player-banner" style="width: 100%; display: flex; justify-content: space-between; margin-bottom: 10px; border: 2px solid black; padding: 5px; background: #fafafa; font-size: 0.8rem;">
-                <div id="player-1" style="display:flex; align-items:center; gap:8px;">
+                <div id="player-1" style="display:flex; align-items:center;">
                     <canvas id="avatar-1" width="32" height="32" style="border:1px solid black; width:32px; height:32px; image-rendering:pixelated; background:white;"></canvas>
-                    <div><div style="font-weight:bold;">PLAYER 1 (SOLID)</div><div id="name-1">...</div></div>
+                    <div style="margin-left:8px;"><div style="font-weight:bold;">PLAYER 1 (SOLID)</div><div id="name-1">...</div></div>
                 </div>
-                <div id="player-2" style="display:flex; align-items:center; gap:8px; flex-direction: row-reverse; text-align: right;">
+                <div id="player-2" style="display:flex; align-items:center; flex-direction: row-reverse; text-align: right;">
                     <canvas id="avatar-2" width="32" height="32" style="border:1px solid black; width:32px; height:32px; image-rendering:pixelated; background:white;"></canvas>
-                    <div><div style="font-weight:bold;">PLAYER 2 (STRIPES)</div><div id="name-2">...</div></div>
+                    <div style="margin-right:8px;"><div style="font-weight:bold;">PLAYER 2 (STRIPES)</div><div id="name-2">...</div></div>
                 </div>
             </div>
 
@@ -545,7 +545,7 @@
         function updateLobbyUI() {
             const players = Object.entries(gameState.players || {}).map(entry => ({ uid: entry[0], name: entry[1].name, joinedAt: entry[1].joinedAt })).sort((a,b)=>a.joinedAt-b.joinedAt);
             const listDiv = document.getElementById('lobby-players');
-            listDiv.innerHTML = players.map(p => '<div style="display:flex; align-items:center; gap:10px; font-weight:bold; font-size:1.1rem; border-bottom:1px solid #eee; padding:5px 0;"><canvas id="avatar-' + p.uid + '" width="32" height="32" style="border:2px solid black; width:32px; height:32px; image-rendering:-webkit-optimize-contrast; image-rendering:crisp-edges; image-rendering:pixelated;"></canvas>' + p.name + '</div>').join('');
+            listDiv.innerHTML = players.map(p => '<div style="display:flex; align-items:center; font-weight:bold; font-size:1.1rem; border-bottom:1px solid #eee; padding:5px 0;"><canvas id="avatar-' + p.uid + '" width="32" height="32" style="border:2px solid black; width:32px; height:32px; image-rendering:-webkit-optimize-contrast; image-rendering:crisp-edges; image-rendering:pixelated;"></canvas><span style="margin-left:10px;">' + p.name + '</span></div>').join('');
             
             setTimeout(() => { players.forEach(p => window.rekindleFetchAvatarSeed(rtdb, p.uid, seed => drawAvatar('avatar-' + p.uid, seed))); }, 0);
             

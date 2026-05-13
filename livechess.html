@@ -282,13 +282,13 @@
             <div id="status-bar">Waiting...</div>
             
             <div id="player-banner" style="width: 100%; display: flex; justify-content: space-between; margin-bottom: 10px; border: 2px solid black; padding: 5px; background: #fafafa;">
-                <div id="player-white" style="display:flex; align-items:center; gap:8px;">
+                <div id="player-white" style="display:flex; align-items:center;">
                     <canvas id="avatar-white" width="32" height="32" style="border:1px solid black; width:32px; height:32px; image-rendering:pixelated; background:white;"></canvas>
-                    <div><div style="font-size:0.7rem; font-weight:bold;">WHITE</div><div id="name-white" style="font-weight:bold;">...</div></div>
+                    <div style="margin-left:8px;"><div style="font-size:0.7rem; font-weight:bold;">WHITE</div><div id="name-white" style="font-weight:bold;">...</div></div>
                 </div>
-                <div id="player-black" style="display:flex; align-items:center; gap:8px; flex-direction: row-reverse; text-align: right;">
+                <div id="player-black" style="display:flex; align-items:center; flex-direction: row-reverse; text-align: right;">
                     <canvas id="avatar-black" width="32" height="32" style="border:1px solid black; width:32px; height:32px; image-rendering:pixelated; background:white;"></canvas>
-                    <div><div style="font-size:0.7rem; font-weight:bold;">BLACK</div><div id="name-black" style="font-weight:bold;">...</div></div>
+                    <div style="margin-right:8px;"><div style="font-size:0.7rem; font-weight:bold;">BLACK</div><div id="name-black" style="font-weight:bold;">...</div></div>
                 </div>
             </div>
 
@@ -602,9 +602,9 @@
             
             const listDiv = document.getElementById('lobby-players');
             listDiv.innerHTML = players.map(function(p) {
-                return '<div style="display:flex; align-items:center; gap:10px; font-weight:bold; font-size:1.1rem; border-bottom:1px solid #eee; padding:5px 0;">' +
+                return '<div style="display:flex; align-items:center; font-weight:bold; font-size:1.1rem; border-bottom:1px solid #eee; padding:5px 0;">' +
                        '<canvas id="avatar-' + p.uid + '" width="32" height="32" style="border:2px solid black; width:32px; height:32px; image-rendering:-webkit-optimize-contrast; image-rendering:crisp-edges; image-rendering:pixelated;"></canvas>' +
-                       p.name + '</div>';
+                       '<span style="margin-left:10px;">' + p.name + '</span></div>';
             }).join('');
             
             // Draw avatars

@@ -204,8 +204,8 @@
             <div style="background:white;border:2px solid black;box-shadow:6px 6px 0 black;padding:20px;max-width:300px;text-align:center;font-family:sans-serif;">
                 <h3 style="margin-top:0;border-bottom:1px solid #ccc;padding-bottom:10px;">Timezone Not Set</h3>
                 <p style="font-size:0.9rem;margin:15px 0;">Times may be incorrect. Please set your location in Settings.</p>
-                <div style="display:flex;justify-content:center;gap:10px;">
-                    <button id="tz-warn-dismiss" style="background:white;border:2px solid black;padding:8px 15px;font-weight:bold;cursor:pointer;box-shadow:2px 2px 0 black;">Dismiss</button>
+                <div style="display:flex;justify-content:center;">
+                    <button id="tz-warn-dismiss" style="background:white;border:2px solid black;padding:8px 15px;font-weight:bold;cursor:pointer;box-shadow:2px 2px 0 black;margin-right:10px;">Dismiss</button>
                     <button id="tz-warn-settings" style="background:black;color:white;border:2px solid black;padding:8px 15px;font-weight:bold;cursor:pointer;box-shadow:2px 2px 0 black;">Settings</button>
                 </div>
             </div>
@@ -233,7 +233,7 @@
     // Injects a UI toggle to enable/disable Daylight Saving Time (+1 hr)
     function renderDSTToggle(parentElement) {
         const container = document.createElement('div');
-        container.style.cssText = 'display:flex; align-items:center; gap:10px; margin-top:10px; font-family:"Geneva","Verdana",sans-serif;';
+        container.style.cssText = 'display:flex; align-items:center; margin-top:10px; font-family:"Geneva","Verdana",sans-serif;';
         
         const checkbox = document.createElement('input');
         checkbox.type = 'checkbox';
@@ -252,6 +252,7 @@
         
         container.appendChild(checkbox);
         container.appendChild(label);
+        label.style.marginLeft = '10px';
         
         if (parentElement) {
             parentElement.appendChild(container);

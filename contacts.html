@@ -319,6 +319,7 @@
             cursor: pointer;
             display: none;
         }
+        .contact-btn-row > * + * { margin-left: 10px; }
 
         /* Only native */
 
@@ -678,7 +679,7 @@
                         <div class="contact-org">${title ? title + (org ? ", " : "") : ""}${org}</div>
                     </div>
                     ${!isReadOnly ? `
-                        <div style="display:flex; gap:10px;">
+                        <div class="contact-btn-row" style="display:flex;">
                             <span class="del-btn" style="display:block; color:black; border:2px solid black; padding:0 5px;" onclick="editContact()">${window.t('contacts.data.edit', 'Edit')}</span>
                             <span class="del-btn" style="display:block; color:black; border:2px solid black; padding:0 5px;" onclick="deleteContact('${person.id}')">${window.t('contacts.data.delete', 'Delete')}</span>
                         </div>

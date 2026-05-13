@@ -601,6 +601,7 @@
             border: 2px solid black;
             font-family: inherit;
         }
+        .mail-btn-row > * + * { margin-left: 10px; }
 
         .login-form {
             display: flex;
@@ -710,7 +711,7 @@
                         <input type="number" id="imap-port" class="login-input" placeholder="Port" value="993"
                             style="width: 80px;">
                     </div>
-                    <div style="display:flex; gap:10px;">
+                    <div class="mail-btn-row" style="display:flex;">
                         <input type="text" id="smtp-host" class="login-input" placeholder="SMTP Host" value=""
                             style="margin-right:10px;">
                         <input type="number" id="smtp-port" class="login-input" placeholder="Port" value="465"

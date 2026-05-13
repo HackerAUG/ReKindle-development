@@ -643,8 +643,16 @@
         .modal-buttons {
             display: flex;
             justify-content: center;
-            gap: 10px;
             margin-top: 20px;
+        }
+
+        .modal-buttons > * + * {
+            margin-left: 10px;
+        }
+
+        .tag-list > * {
+            margin-right: 10px;
+            margin-bottom: 10px;
         }
     </style>
     <script src="time.js"></script>
@@ -711,7 +719,7 @@
 
                 <div style="margin-top:20px; border-top:1px solid #ccc; padding-top:20px;">
                     <strong>Preset Feeds:</strong>
-                    <div style="display: flex; margin-top: 10px; flex-wrap: wrap; gap: 10px;">
+                    <div class="tag-list" style="display: flex; margin-top: 10px; flex-wrap: wrap;">
                         <button class="sys-btn"
                             onclick="addPreset('BBC World', 'http://feeds.bbci.co.uk/news/world/rss.xml')">BBC</button>
                         <button class="sys-btn"

@@ -119,6 +119,8 @@
         }
 
         /* UI ELEMENTS */
+        .trail-col-group > * + * { margin-top: 5px; }
+        .trail-row-group > * + * { margin-left: 10px; }
         .sys-btn {
             background: white;
             border: 2px solid black;
@@ -317,7 +319,7 @@
             <div class="modal-box">
                 <h2 id="river-title" data-i18n="oregontrail.river.title">River Crossing</h2>
                 <p id="river-text" data-i18n="oregontrail.river.desc">River looks deep and swift.</p>
-                <div style="display: flex; flex-direction: column; gap: 5px; margin-top: 15px;">
+                <div class="trail-col-group" style="display: flex; flex-direction: column; margin-top: 15px;">
                     <button class="sys-btn" onclick="attemptRiver('ford')" data-i18n="oregontrail.river.ford">Ford the River</button>
                     <button class="sys-btn" onclick="attemptRiver('caulk')" data-i18n="oregontrail.river.caulk">Caulk & Float</button>
                     <button class="sys-btn" onclick="attemptRiver('wait')" data-i18n="oregontrail.river.wait">Wait a Day</button>
@@ -346,7 +348,7 @@
             <div class="modal-box">
                 <h2 data-i18n="oregontrail.restart.title">Restart Journey?</h2>
                 <p data-i18n="oregontrail.restart.desc" style="font-size: 0.9rem;">Are you sure you want to abandon the current trail and start over?</p>
-                <div style="display: flex; gap: 10px; margin-top: 15px; justify-content: center;">
+                <div class="trail-row-group" style="display: flex; margin-top: 15px; justify-content: center;">
                     <button class="sys-btn" onclick="execRestart()" data-i18n="oregontrail.btn.yes">Yes</button>
                     <button class="sys-btn" onclick="document.getElementById('restart-modal').classList.add('hidden')" data-i18n="oregontrail.btn.no">No</button>
                 </div>

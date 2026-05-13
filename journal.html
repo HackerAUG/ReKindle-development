@@ -954,7 +954,10 @@
             monthHeader.style.fontWeight = 'bold';
             monthHeader.style.textAlign = 'center';
             const mDate = new Date(year, month, 1);
-            monthHeader.innerText = mDate.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+            monthHeader.innerText = (function(d) {
+                var zd = (typeof rekindleGetZonedDate === 'function') ? rekindleGetZonedDate(d) : d;
+                return ['January','February','March','April','May','June','July','August','September','October','November','December'][zd.getMonth()] + ' ' + zd.getFullYear();
+            })(mDate);
 
             // Container for this month
             const monthContainer = document.createElement('div');
@@ -1122,7 +1125,10 @@
             try {
                 const parts = id.split('-');
                 const localDate = new Date(parts[0], parts[1] - 1, parts[2]);
-                document.getElementById('editor-date-display').innerText = localDate.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+                document.getElementById('editor-date-display').innerText = (function(d) {
+                    var zd = (typeof rekindleGetZonedDate === 'function') ? rekindleGetZonedDate(d) : d;
+                    return ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][zd.getDay()] + ', ' + ['January','February','March','April','May','June','July','August','September','October','November','December'][zd.getMonth()] + ' ' + zd.getDate() + ', ' + zd.getFullYear();
+                })(localDate)
             } catch (e) {
                 document.getElementById('editor-date-display').innerText = id;
             }

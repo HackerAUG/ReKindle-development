@@ -855,7 +855,10 @@
                 }
 
                 const title = item.title || "Untitled";
-                const dateStr = new Date(item.modified).toLocaleDateString();
+                const dateStr = (function(d) {
+                    var zd = (typeof rekindleGetZonedDate === 'function') ? rekindleGetZonedDate(d) : d;
+                    return (zd.getMonth()+1) + '/' + zd.getDate() + '/' + zd.getFullYear();
+                })(new Date(item.modified));
                 const framesCount = item.frameCount || '?';
 
                 el.innerHTML = `
@@ -1597,6 +1600,7 @@
             }
         }
     </script>
+    <script src="js/time.js"></script>
 
 
 </body>

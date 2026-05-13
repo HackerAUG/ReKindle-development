@@ -1239,7 +1239,10 @@
                 let dateStr = window.t ? window.t('suggestions.msg.unknown_date') : 'Unknown Date';
                 // SAFE ACCESS: No optional chaining
                 if (data.createdAt && data.createdAt.toDate) {
-                    dateStr = new Date(data.createdAt.toDate()).toLocaleDateString();
+                    dateStr = (function(d) {
+                        var zd = (typeof rekindleGetZonedDate === 'function') ? rekindleGetZonedDate(d) : d;
+                        return (zd.getMonth()+1) + '/' + zd.getDate() + '/' + zd.getFullYear();
+                    })(new Date(data.createdAt.toDate()));
                 }
 
                 let isAuthorPro = !!supporterUsers[data.authorName];
@@ -1861,6 +1864,15 @@
             document.body.innerHTML = '<div style="padding:20px;">CRITICAL ERROR: ' + e.message + '</div>';
         }
 
+        function showConfirm(msg, onOk, onCancel) {
+            var d = document.createElement('div');
+            d.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:10000;display:flex;align-items:center;justify-content:center;';
+            d.innerHTML = '<div style="background:white;border:2px solid black;box-shadow:4px 4px 0 black;padding:20px;max-width:320px;font-family:sans-serif;text-align:center;"><p style="margin-bottom:16px;">' + msg + '</p><div><button id="sc-ok" style="border:2px solid black;box-shadow:2px 2px 0 black;padding:6px 16px;background:black;color:white;font-weight:bold;cursor:pointer;margin-right:10px;">OK</button><button id="sc-cancel" style="border:2px solid black;box-shadow:2px 2px 0 black;padding:6px 16px;background:white;font-weight:bold;cursor:pointer;">Cancel</button></div></div>';
+            document.body.appendChild(d);
+            d.querySelector('#sc-ok').onclick = function() { d.remove(); if (onOk) onOk(); };
+            d.querySelector('#sc-cancel').onclick = function() { d.remove(); if (onCancel) onCancel(); };
+        }
+
         var _confirmCallback = null;
         function showConfirmModal(msg, callback) {
             var m = document.getElementById('confirm-modal');
@@ -1869,7 +1881,7 @@
                 _confirmCallback = callback;
                 m.style.display = 'flex';
             } else {
-                if (confirm(msg)) callback();
+                showConfirm(msg, callback);
             }
         }
         function onConfirmYes() {

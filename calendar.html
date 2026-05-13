@@ -646,7 +646,10 @@
             padding: 20px;
             display: flex;
             flex-direction: column;
-            gap: 15px;
+        }
+
+        .modal-content > * + * {
+            margin-top: 15px;
         }
 
         .input-group {
@@ -675,7 +678,10 @@
         .time-inputs {
             display: flex;
             align-items: center;
-            gap: 10px;
+        }
+
+        .time-inputs > * + * {
+            margin-left: 10px;
         }
 
         .time-inputs input {
@@ -691,12 +697,10 @@
             margin-top: 10px;
             display: flex;
             justify-content: flex-end;
-            gap: 10px;
         }
 
         .modal-btns>*+* {
-            margin-left: 0;
-            /* Reset */
+            margin-left: 10px;
         }
     </style>
     <link rel="stylesheet" href="css/custom-select.css">
