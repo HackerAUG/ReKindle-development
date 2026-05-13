@@ -71,11 +71,11 @@
             }
         },
         "topic_comments": {
-            ".indexOn": [
-                "timestamp"
-            ],
             "$topicId": {
                 ".read": "auth != null",
+                ".indexOn": [
+                    "timestamp"
+                ],
                 "$commentId": {
                     ".write": "auth != null && (!data.exists() || data.child('authorId').val() === auth.uid || auth.token.email === 'ukiyo@rekindle.ink')",
                     ".validate": "newData.hasChildren(['body', 'authorId', 'timestamp']) && (newData.child('authorId').val() === auth.uid || auth.token.email === 'ukiyo@rekindle.ink')"
@@ -84,6 +84,7 @@
         },
         "users_public": {
             ".read": "auth != null",
+            ".indexOn": ["lastActive"],
             "$userId": {
                 ".write": "auth != null && (auth.uid === $userId || auth.token.email === 'ukiyo@rekindle.ink')",
                 "username": {
