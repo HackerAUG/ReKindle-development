@@ -1,0 +1,11 @@
+{
+  "name": "rekindle-cleanup",
+  "main": "index.js",
+  "compatibility_date": "2026-05-05",
+  "workers_dev": true,
+  "preview_urls": false,
+"triggers": {
+    // Runs every day at 03:00 UTC
+    "crons": ["0 3 * * *"]
+  }
+}
