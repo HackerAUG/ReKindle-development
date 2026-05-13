@@ -330,17 +330,6 @@
             position: relative;
         }
 
-        #online-count-display {
-            font-size: 0.8rem;
-            color: #666;
-            font-weight: bold;
-            display: flex;
-            align-items: center;
-            background: white;
-            border: 1px solid black;
-            padding: 1px 6px;
-            box-shadow: 1px 1px 0 black;
-        }
 
 
         #header-new-chat-btn {
@@ -1134,9 +1123,6 @@
                     <button id="header-new-chat-btn" class="sys-btn header-new-chat-btn"
                         onclick="openCreateModal()">+</button>
                     <span class="current-room" id="room-title">All of KindleChat</span>
-                    <div id="online-count-display" style="display:none;">
-                        <span id="online-count-value">0</span>&nbsp;<span data-i18n="kindlechat.online">online</span>
-                    </div>
                 </div>
 
                 <div id="chat-history">
@@ -1414,8 +1400,17 @@
         var oldestMsgDoc = null; // For pagination
         var oldestGeneralTimestamp = null; // For RTDB pagination
         var isLoadingMore = false; // For pagination
+        var noMoreGeneralMessages = false; // True once we've reached the oldest message in RTDB
         var supporterUsers = {}; // Store supporter usernames as object for ES5 compatibility
         var usernameToProfile = {}; // Cache: username -> { uid, avatarSeed, customAvatar }
+        // KINDLE MEMORY: track which messages are currently rendered in the
+        // general channel so child_added can dedupe across initial-load,
+        // pagination, and live updates. Reset whenever the room changes.
+        var renderedKindlechatIds = {};
+        var kcDeleteHandler = null;       // bare-ref child_removed handler ref
+        var kcChangedHandler = null;      // limitToLast(child_changed) handler ref
+        var kcAddedHandler = null;        // limitToLast(child_added) handler ref
+        var rulesListenerRef = null;      // accepted_rules listener for cleanup
         var userRooms = [];
         var generalRoom = { id: 'general', name: window.t('kindlechat.room.general', 'All of KindleChat'), lastMessageAt: null };
         var userRoomStates = {};
@@ -1562,7 +1557,9 @@
                     currentUsername = (user.email || user.uid).split('@')[0];
 
                     // Check Rules Acceptance
-                    rtdb.ref('users_private/' + user.uid + '/accepted_rules/kindlechat').on('value', function (snap) {
+                    if (rulesListenerRef) rulesListenerRef.off();
+                    rulesListenerRef = rtdb.ref('users_private/' + user.uid + '/accepted_rules/kindlechat');
+                    rulesListenerRef.on('value', function (snap) {
                         currentUserRulesVersion = snap.val() || 0;
                     });
 
@@ -1720,7 +1717,8 @@
             });
 
             // Scroll to top to load more messages
-            document.getElementById('chat-history').addEventListener('scroll', handleScroll);
+            var _chatHistoryEl = document.getElementById('chat-history');
+            _chatHistoryEl.addEventListener('scroll', handleScroll);
         };
 
 
@@ -2227,11 +2225,10 @@
             div.onclick = function () { switchRoom(room.id, room.name); };
             listEl.appendChild(div);
 
-            // Draw avatar after DOM insertion
+            // Draw avatar after DOM insertion. resolveAvatar is synchronous;
+            // calling directly avoids queueing one timer per sidebar item.
             if (roomAvatarId && room.name) {
-                setTimeout(function () {
-                    resolveAvatar(room.name, roomAvatarId);
-                }, 0);
+                resolveAvatar(room.name, roomAvatarId);
             }
         }
 
@@ -2270,13 +2267,31 @@
 
         // --- MESSAGE LOGIC (with pagination) ---
 
+        function showLoadingIndicator() {
+            if (document.getElementById('load-more-indicator')) return;
+            var chatView = document.getElementById('chat-view');
+            var roomHeader = chatView ? chatView.querySelector('.room-header') : null;
+            var headerHeight = roomHeader ? roomHeader.offsetHeight : 0;
+            var el = document.createElement('div');
+            el.id = 'load-more-indicator';
+            el.style.cssText = 'position:absolute;top:' + headerHeight + 'px;left:0;right:0;z-index:10;background:#eee;border-bottom:1px solid black;padding:6px;text-align:center;font-size:0.85rem;';
+            el.textContent = 'Loading older messages...';
+            if (chatView) chatView.appendChild(el);
+        }
+
+        function hideLoadingIndicator() {
+            var el = document.getElementById('load-more-indicator');
+            if (el && el.parentNode) el.parentNode.removeChild(el);
+        }
+
         function handleScroll() {
             var historyEl = document.getElementById('chat-history');
-            if (historyEl.scrollTop <= 50 && !isLoadingMore) {
+            var st = historyEl.scrollTop;
 
+            if (st <= 800 && !isLoadingMore) {
                 // BRANCH: General Chat (RTDB)
                 if (currentRoomId === 'general') {
-                    if (oldestGeneralTimestamp) {
+                    if (oldestGeneralTimestamp && !noMoreGeneralMessages) {
                         loadMoreGeneralFromRTDB(historyEl);
                     }
                     return;
@@ -2285,6 +2300,7 @@
                 // BRANCH: Firestore DMs
                 if (oldestMsgDoc) {
                     isLoadingMore = true;
+                    showLoadingIndicator();
                     var oldScrollHeight = historyEl.scrollHeight;
 
                     db.collection('rooms').doc(currentRoomId).collection('messages')
@@ -2309,57 +2325,103 @@
                     })
                         .then(function () {
                             isLoadingMore = false;
+                            hideLoadingIndicator();
                         });
                 }
             }
         }
 
-        // --- NEW: Load More for General Chat (RTDB) ---
+        // --- Load More for General Chat (RTDB) ---
+        // Fetches the 25 messages immediately before the oldest message currently in
+        // the DOM, prepends them, and restores the scroll anchor so the user stays
+        // at the same visual position.
+        function showEndOfHistoryMarker(historyEl) {
+            if (historyEl.querySelector('#end-of-history')) return;
+            var el = document.createElement('div');
+            el.id = 'end-of-history';
+            el.style.cssText = 'text-align:center;padding:10px;color:#999;font-size:0.8rem;border-bottom:1px solid #ddd;margin-bottom:8px;';
+            el.textContent = '— Beginning of chat history —';
+            historyEl.insertBefore(el, historyEl.firstChild);
+        }
+
         function loadMoreGeneralFromRTDB(historyEl) {
+            if (isLoadingMore || !oldestGeneralTimestamp || noMoreGeneralMessages) return;
             isLoadingMore = true;
+            showLoadingIndicator();
             var oldScrollHeight = historyEl.scrollHeight;
 
-            // Fetch older messages ending before the current oldest timestamp
-            // Using logic: endAt(oldest - 1) to avoid duplicate of the boundary message
-            generalChatRef.orderByChild('timestamp').endAt(oldestGeneralTimestamp - 0.001).limitToLast(25).once('value')
+            // endAt(oldest - 1) is safe for integer ms timestamps; avoids re-fetching
+            // the boundary message.
+            generalChatRef.orderByChild('timestamp').endAt(oldestGeneralTimestamp - 1).limitToLast(25).once('value')
                 .then(function (snapshot) {
-                    if (snapshot.exists()) {
-                        var messages = [];
-                        snapshot.forEach(function (child) {
-                            messages.push({ id: child.key, data: child.val() });
-                        });
+                    if (currentRoomId !== 'general') return; // user switched rooms mid-fetch
 
-                        // RTDB returns in ascending order, so the first is the new oldest
-                        if (messages.length > 0) {
-                            oldestGeneralTimestamp = messages[0].data.timestamp;
-
-                            // Render pre-pended (iteration order is oldest to newest)
-                            // We need to render them and ensure they end up at the top.
-                            // renderMessage handles placement, but we need to pass 'prepend' = true.
-                            // ALSO: renderMessage inserts before firstChild. 
-                            // To keep order correct when prepending a BATCH (which is sorted asc), 
-                            // we should append them to a fragment or prepend them in REVERSE order.
-
-                            // Example: Batch [A, B, C] (A is oldest). Current history: [D, E, F].
-                            // If we prepend A, then B, then C -> C, B, A, D, E, F (Wrong order for batch)
-                            // We need A, B, C, D, E, F. 
-                            // So we must prepend C, then B, then A.
-
-                            // Iterate backwards
-                            for (var i = messages.length - 1; i >= 0; i--) {
-                                renderMessage(messages[i].data, messages[i].id, true);
-                            }
-
-                            // Restore Scroll
-                            historyEl.scrollTop = historyEl.scrollHeight - oldScrollHeight;
-                        }
+                    if (!snapshot.exists()) {
+                        // No messages exist before the oldest we have — we've reached the beginning.
+                        noMoreGeneralMessages = true;
+                        showEndOfHistoryMarker(historyEl);
+                        return;
                     }
-                    isLoadingMore = false;
+
+                    // Build the ordered batch, skipping anything already in the DOM.
+                    // RTDB forEach iterates in ascending timestamp order.
+                    var batch = [];
+                    snapshot.forEach(function (child) {
+                        if (!renderedKindlechatIds[child.key]) {
+                            batch.push({ id: child.key, data: child.val() });
+                        }
+                    });
+
+                    // Always advance oldestGeneralTimestamp using the raw snapshot
+                    // (even if every message was already rendered) so the next call
+                    // looks further back rather than refetching the same window.
+                    var rawOldest = null;
+                    snapshot.forEach(function (child) {
+                        var ts = child.val().timestamp;
+                        if (typeof ts === 'number' && (rawOldest === null || ts < rawOldest)) {
+                            rawOldest = ts;
+                        }
+                    });
+                    if (rawOldest !== null) {
+                        oldestGeneralTimestamp = rawOldest;
+                    }
+
+                    if (batch.length === 0) {
+                        // All results in this window were already rendered (deduped).
+                        // The snapshot returned fewer than 25, which means we're near the beginning.
+                        noMoreGeneralMessages = true;
+                        showEndOfHistoryMarker(historyEl);
+                        return;
+                    }
+
+                    // If the snapshot returned fewer messages than the limit we're at the start.
+                    var snapshotSize = 0;
+                    snapshot.forEach(function() { snapshotSize++; });
+                    if (snapshotSize < 25) {
+                        noMoreGeneralMessages = true;
+                    }
+
+                    // Prepend in reverse so oldest ends up first in the DOM.
+                    // (insertBefore(firstChild) each iteration puts newest first otherwise.)
+                    for (var i = batch.length - 1; i >= 0; i--) {
+                        renderedKindlechatIds[batch[i].id] = true;
+                        renderMessage(batch[i].data, batch[i].id, true);
+                    }
+
+                    if (noMoreGeneralMessages) {
+                        showEndOfHistoryMarker(historyEl);
+                    }
+
+                    // Restore scroll so user stays anchored at the content they were reading.
+                    historyEl.scrollTop = historyEl.scrollHeight - oldScrollHeight;
                 })
             ['catch'](function (e) {
-                console.error("Error loading more general messages:", e);
-                isLoadingMore = false;
-            });
+                console.error('Error loading more general messages:', e);
+            })
+                .then(function () {
+                    isLoadingMore = false;
+                    hideLoadingIndicator();
+                });
         }
 
         // --- MESSAGE CACHING (localStorage) ---
@@ -2448,15 +2510,28 @@
             // Cleanup previous listeners
             if (unsubscribeMsg) unsubscribeMsg();
             if (generalListener) {
+                // Detaches all callbacks on this limitToLast(50) query
+                // (covers kcAddedHandler and kcChangedHandler).
                 generalListener.off();
                 generalListener = null;
             }
+            // The bare-ref child_removed listener lives on a different query
+            // and must be detached by exact (event, handler) pair so it doesn't
+            // also kill the lastMessage timestamp listener on the same path.
+            if (kcDeleteHandler) {
+                generalChatRef.off('child_removed', kcDeleteHandler);
+                kcDeleteHandler = null;
+            }
+            kcAddedHandler = null;
+            kcChangedHandler = null;
+            renderedKindlechatIds = {};
             // Reset Pixel Cache on reload
             window.pixelGridCache = {};
 
             oldestMsgDoc = null;
             oldestGeneralTimestamp = null;
             isLoadingMore = false;
+            noMoreGeneralMessages = false;
 
             // Disable input while loading
             setChatInputEnabled(false);
@@ -2576,63 +2651,116 @@
         }
 
         // --- GENERAL CHANNEL: Realtime Database ---
+        // INCREMENTAL LOADING (Kindle memory):
+        //   - Initial: one .once('value') for the latest 50 (handles "no messages" UI).
+        //   - New messages: child_added on the limitToLast(50) live query — single
+        //     DOM append per arrival, no full-history rebuild.
+        //   - Reactions/edits: child_changed on the same query — renderMessage's
+        //     existing replaceChild path updates in place.
+        //   - Genuine deletes: child_removed on the BARE ref so window-slide
+        //     events (a 51st message pushing the oldest out of the live query)
+        //     do NOT remove paginated older messages from the DOM.
         function loadGeneralFromRTDB(history) {
             history.innerHTML = '<div style="text-align:center; padding:20px">Connecting...</div>';
+
+            renderedKindlechatIds = {};
+            recentGeneralMsgUsers = [];
+            oldestGeneralTimestamp = null;
+            noMoreGeneralMessages = false;
 
             // Query last 50 messages ordered by timestamp
             generalListener = generalChatRef.orderByChild('timestamp').limitToLast(50);
 
-            generalListener.on('value', function (snapshot) {
+            generalListener.once('value').then(function (snapshot) {
                 // Restore title and enable input
                 var titleEl = document.querySelector('.title-text');
                 if (titleEl) titleEl.innerText = 'KindleChat';
                 setChatInputEnabled(true);
 
-                // WE MUST CHECK SCROLL STATE BEFORE CLEARING INNER_HTML
-                var isScrolledToBottom = history.scrollHeight - history.clientHeight <= history.scrollTop + 100;
-                var previousScrollTop = history.scrollTop;
-
                 history.innerHTML = '';
 
                 if (!snapshot.exists()) {
                     history.innerHTML = '<div style="text-align:center; padding:20px; color:#666;">No messages yet.</div>';
-                    return;
-                }
-
-                recentGeneralMsgUsers = []; // Reset for spam protection
-
-                // Convert snapshot to array and sort by timestamp
-                var messages = [];
-                snapshot.forEach(function (child) {
-                    messages.push({ id: child.key, data: child.val() });
-                });
-
-                // Track oldest timestamp for pagination
-                if (messages.length > 0) {
-                    // Since iteration is in order (oldest to newest), the first one is the oldest
-                    oldestGeneralTimestamp = messages[0].data.timestamp;
-                }
-
-                // Render each message
-                messages.forEach(function (msg) {
-                    renderMessage(msg.data, msg.id);
-                    // Track for spam protection
-                    if (msg.data.user) {
-                        recentGeneralMsgUsers.push(msg.data.user);
-                    }
-                });
-
-                // Keep only last GENERAL_MSG_WINDOW for spam protection
-                if (recentGeneralMsgUsers.length > GENERAL_MSG_WINDOW) {
-                    recentGeneralMsgUsers = recentGeneralMsgUsers.slice(-GENERAL_MSG_WINDOW);
-                }
-
-                if (isScrolledToBottom) {
-                    history.scrollTop = history.scrollHeight;
                 } else {
-                    history.scrollTop = previousScrollTop;
+                    snapshot.forEach(function (child) {
+                        var data = child.val();
+                        var msgId = child.key;
+                        renderedKindlechatIds[msgId] = true;
+
+                        if (typeof data.timestamp === 'number') {
+                            if (oldestGeneralTimestamp === null || data.timestamp < oldestGeneralTimestamp) {
+                                oldestGeneralTimestamp = data.timestamp;
+                            }
+                        }
+
+                        if (data.user) recentGeneralMsgUsers.push(data.user);
+                        renderMessage(data, msgId);
+                    });
+
+                    if (recentGeneralMsgUsers.length > GENERAL_MSG_WINDOW) {
+                        recentGeneralMsgUsers = recentGeneralMsgUsers.slice(-GENERAL_MSG_WINDOW);
+                    }
+
+                    history.scrollTop = history.scrollHeight;
                 }
-            }, function (error) {
+
+                // --- Incremental listeners attach AFTER initial render.
+                // child_added still re-fires for the 50 messages we just loaded;
+                // renderedKindlechatIds dedupes them.
+                kcAddedHandler = function (childSnap) {
+                    if (currentRoomId !== 'general') return; // stale
+                    var msgId = childSnap.key;
+                    if (renderedKindlechatIds[msgId]) return;
+                    renderedKindlechatIds[msgId] = true;
+
+                    var data = childSnap.val();
+
+                    // Clear "No messages yet." placeholder if present
+                    if (history.children.length === 1 &&
+                        history.firstChild &&
+                        history.firstChild.textContent &&
+                        history.firstChild.textContent.indexOf('No messages yet') !== -1) {
+                        history.innerHTML = '';
+                    }
+
+                    if (typeof data.timestamp === 'number') {
+                        if (oldestGeneralTimestamp === null || data.timestamp < oldestGeneralTimestamp) {
+                            oldestGeneralTimestamp = data.timestamp;
+                        }
+                    }
+
+                    if (data.user) {
+                        recentGeneralMsgUsers.push(data.user);
+                        if (recentGeneralMsgUsers.length > GENERAL_MSG_WINDOW) {
+                            recentGeneralMsgUsers = recentGeneralMsgUsers.slice(-GENERAL_MSG_WINDOW);
+                        }
+                    }
+
+                    // Smart auto-scroll: only follow if user was already near bottom
+                    var nearBottom = (history.scrollHeight - history.clientHeight) - history.scrollTop < 100;
+                    renderMessage(data, msgId);
+                    if (nearBottom) history.scrollTop = history.scrollHeight;
+                };
+                generalListener.on('child_added', kcAddedHandler);
+
+                // Reactions / edits — renderMessage finds existing element and replaceChild's it.
+                kcChangedHandler = function (childSnap) {
+                    if (currentRoomId !== 'general') return;
+                    if (!renderedKindlechatIds[childSnap.key]) return;
+                    renderMessage(childSnap.val(), childSnap.key);
+                };
+                generalListener.on('child_changed', kcChangedHandler);
+
+                // Genuine deletes — bare ref so window-slide doesn't fire here.
+                kcDeleteHandler = function (childSnap) {
+                    if (currentRoomId !== 'general') return;
+                    if (!renderedKindlechatIds[childSnap.key]) return;
+                    delete renderedKindlechatIds[childSnap.key];
+                    var msgEl = history.querySelector('.msg[data-msg-id="' + childSnap.key + '"]');
+                    if (msgEl && msgEl.parentNode) msgEl.parentNode.removeChild(msgEl);
+                };
+                generalChatRef.on('child_removed', kcDeleteHandler);
+            })['catch'](function (error) {
                 var titleEl = document.querySelector('.title-text');
                 if (titleEl) titleEl.innerText = 'KindleChat';
                 console.error("Error loading general messages:", error);
@@ -2745,7 +2873,20 @@
 
         // --- USERNAME → PROFILE CACHE ---
         function buildUsernameCache() {
-            rtdb.ref('users_public').once('value').then(function (snap) {
+            var CACHE_KEY = 'rkUsernameCacheV1';
+            var CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+            try {
+                var cached = sessionStorage.getItem(CACHE_KEY);
+                if (cached) {
+                    var parsed = JSON.parse(cached);
+                    if (Date.now() < parsed.expiry) {
+                        usernameToProfile = parsed.data;
+                        return;
+                    }
+                }
+            } catch (e) {}
+
+            rtdb.ref('users_public').orderByChild('lastActive').limitToLast(500).once('value').then(function (snap) {
                 var all = snap.val() || {};
                 usernameToProfile = {};
                 for (var uid in all) {
@@ -2765,6 +2906,9 @@
                         };
                     }
                 }
+                try {
+                    sessionStorage.setItem(CACHE_KEY, JSON.stringify({ data: usernameToProfile, expiry: Date.now() + CACHE_TTL }));
+                } catch (e) {}
             })['catch'](function (err) {
                 console.warn('Could not build username cache:', err);
             });
@@ -3088,10 +3232,11 @@
                 history.appendChild(div);
             }
 
-            // Resolve avatar after DOM insertion
-            setTimeout(function () {
-                resolveAvatar(msg.user, avatarId);
-            }, 0);
+            // Resolve avatar after DOM insertion. resolveAvatar is purely
+            // synchronous (cache lookup + canvas fill), so the previous
+            // setTimeout(0) wrapper just queued one timer per message —
+            // significant memory churn on Kindle when rendering 50+ messages.
+            resolveAvatar(msg.user, avatarId);
 
             if (msg.is_flipnote && msg.flipnote_data) {
                 setTimeout(function () { playFlipnote(msgId); }, 200);
@@ -4037,6 +4182,15 @@
             document.querySelector('.window').classList.toggle('fullscreen');
         }
 
+        function showConfirm(msg, onOk, onCancel) {
+            var d = document.createElement('div');
+            d.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:10000;display:flex;align-items:center;justify-content:center;';
+            d.innerHTML = '<div style="background:white;border:2px solid black;box-shadow:4px 4px 0 black;padding:20px;max-width:320px;font-family:sans-serif;text-align:center;"><p style="margin-bottom:16px;">' + msg + '</p><div><button id="sc-ok" style="border:2px solid black;box-shadow:2px 2px 0 black;padding:6px 16px;background:black;color:white;font-weight:bold;cursor:pointer;margin-right:10px;">OK</button><button id="sc-cancel" style="border:2px solid black;box-shadow:2px 2px 0 black;padding:6px 16px;background:white;font-weight:bold;cursor:pointer;">Cancel</button></div></div>';
+            document.body.appendChild(d);
+            d.querySelector('#sc-ok').onclick = function() { d.remove(); if (onOk) onOk(); };
+            d.querySelector('#sc-cancel').onclick = function() { d.remove(); if (onCancel) onCancel(); };
+        }
+
         var _confirmCallback = null;
         function showConfirmModal(msg, callback) {
             var m = document.getElementById('confirm-modal-custom');
@@ -4045,7 +4199,7 @@
                 _confirmCallback = callback;
                 m.style.display = 'flex';
             } else {
-                if (confirm(msg)) callback();
+                showConfirm(msg, callback);
             }
         }
         function onConfirmYesCustom() {
@@ -4057,6 +4211,30 @@
             if (m) m.style.display = 'none';
             _confirmCallback = null;
         }
+
+        // --- KINDLE MEMORY: detach Firebase listeners on navigation away ---
+        // Without this, Firebase keeps the live general-channel and rooms
+        // listeners open while the tab is suspended; the JS engine retains
+        // chat DOM and caches until GC, and listener callbacks keep firing
+        // into a hidden document.
+        function kcDetachAllListeners() {
+            try {
+                if (unsubscribeMsg) { unsubscribeMsg(); unsubscribeMsg = null; }
+                if (unsubscribeRooms) { unsubscribeRooms(); unsubscribeRooms = null; }
+                if (unsubscribeGeneral) { unsubscribeGeneral(); unsubscribeGeneral = null; }
+                if (generalListener) { generalListener.off(); generalListener = null; }
+                if (kcDeleteHandler) {
+                    generalChatRef.off('child_removed', kcDeleteHandler);
+                    kcDeleteHandler = null;
+                }
+                if (rulesListenerRef) { rulesListenerRef.off(); rulesListenerRef = null; }
+                kcAddedHandler = null;
+                kcChangedHandler = null;
+                renderedKindlechatIds = {};
+            } catch (e) { /* ignore — page is going away */ }
+        }
+        window.addEventListener('pagehide', kcDetachAllListeners);
+        window.addEventListener('beforeunload', kcDetachAllListeners);
     </script>
 
     <script>

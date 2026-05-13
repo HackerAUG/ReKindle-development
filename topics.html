@@ -110,21 +110,6 @@
             box-shadow: 2px 2px 0 black;
         }
 
-        #online-count-display {
-            position: absolute;
-            left: 45px;
-            font-size: 0.75rem;
-            color: #666;
-            font-weight: bold;
-            display: flex;
-            align-items: center;
-            background: white;
-            border: 1px solid black;
-            padding: 0px 5px;
-            box-shadow: 1px 1px 0 black;
-            z-index: 5;
-            height: 20px;
-        }
 
         .close-box:active {
             background: black;
@@ -756,9 +741,6 @@
         <div class="title-bar">
             <div class="title-stripes"></div>
             <div class="close-box" onclick="window.location.href='index'">X</div>
-            <div id="online-count-display" style="display:none;">
-                <span id="online-count-value">0</span>&nbsp;<span data-i18n="kindlechat.online">online</span>
-            </div>
             <span class="title-text" data-i18n="topics.title">Topics</span>
             <div style="position:absolute; right:10px; z-index:5; display:flex; align-items:center;">
                 <button class="sys-btn" onclick="openRulesModal()"
@@ -1110,6 +1092,7 @@
         // Pagination state for the active topic
         var oldestRenderedTs = null;          // timestamp of the oldest comment currently in DOM
         var isLoadingMoreComments = false;    // re-entry guard for paginated fetches
+        var noMoreComments = false;           // True once we've reached the oldest comment in RTDB
 
         // --- PRESENCE LOGIC ---
         function initPresence(uid) {
@@ -1323,7 +1306,7 @@
                 return;
             }
             isFetchingFullTopics = true;
-            db.ref('topics').orderByChild('lastActive').once('value').then(function(snap) {
+            db.ref('topics').orderByChild('lastActive').limitToLast(500).once('value').then(function(snap) {
                 fullTopicsSnapshot = [];
                 snap.forEach(function(child) {
                     fullTopicsSnapshot.push(Object.assign({ id: child.key }, child.val()));
@@ -1594,6 +1577,7 @@
             renderedCommentIds = {};
             oldestRenderedTs = null;
             isLoadingMoreComments = false;
+            noMoreComments = false;
 
             // Render opening post IF it exists (Legacy support)
             historyEl.innerHTML = '';
@@ -1648,25 +1632,58 @@
             });
         }
 
+        function showCommentsLoadingIndicator() {
+            if (document.getElementById('load-more-indicator')) return;
+            var chatView = document.getElementById('chat-view');
+            var roomHeader = chatView ? chatView.querySelector('.room-header') : null;
+            var headerHeight = roomHeader ? roomHeader.offsetHeight : 0;
+            var el = document.createElement('div');
+            el.id = 'load-more-indicator';
+            el.style.cssText = 'position:absolute;top:' + headerHeight + 'px;left:0;right:0;z-index:10;background:#eee;border-bottom:1px solid black;padding:6px;text-align:center;font-size:0.85rem;';
+            el.textContent = 'Loading older comments...';
+            if (chatView) chatView.appendChild(el);
+        }
+
+        function hideCommentsLoadingIndicator() {
+            var el = document.getElementById('load-more-indicator');
+            if (el && el.parentNode) el.parentNode.removeChild(el);
+        }
+
+        function showEndOfCommentsMarker(historyEl) {
+            if (historyEl.querySelector('#end-of-history')) return;
+            var el = document.createElement('div');
+            el.id = 'end-of-history';
+            el.style.cssText = 'text-align:center;padding:10px;color:#999;font-size:0.8rem;border-bottom:1px solid #ddd;margin-bottom:8px;';
+            el.textContent = '— Beginning of comment history —';
+            historyEl.insertBefore(el, historyEl.firstChild);
+        }
+
         // Fetch the next older batch of comments and prepend them.
         // Mirrors kindlechat.loadMoreGeneralFromRTDB.
         function loadMoreComments() {
-            if (isLoadingMoreComments) return;
+            if (isLoadingMoreComments || noMoreComments) return;
             if (!commentsListener || !oldestRenderedTs) return;
 
             var historyEl = document.getElementById('chat-history');
             isLoadingMoreComments = true;
+            showCommentsLoadingIndicator();
             var oldScrollHeight = historyEl.scrollHeight;
             var topicId = commentsListener;
 
             db.ref('topic_comments/' + topicId)
                 .orderByChild('timestamp')
-                .endAt(oldestRenderedTs - 0.001) // exclusive of current oldest, matches kindlechat
+                .endAt(oldestRenderedTs - 0.001) // exclusive of current oldest
                 .limitToLast(MESSAGES_PER_BATCH)
                 .once('value')
                 .then(function (snap) {
                     if (commentsListener !== topicId) return; // user switched topics mid-fetch
-                    if (!snap.exists()) return;
+
+                    if (!snap.exists()) {
+                        // Nothing before the oldest we have — beginning of history.
+                        noMoreComments = true;
+                        showEndOfCommentsMarker(historyEl);
+                        return;
+                    }
 
                     // RTDB returns ascending; we must prepend in REVERSE so DOM order
                     // ends up correct (matches kindlechat batch-prepend reasoning).
@@ -1678,7 +1695,19 @@
                         batch.push(data);
                     });
 
-                    if (batch.length === 0) return;
+                    if (batch.length === 0) {
+                        // All results already rendered (deduped) — we're at the beginning.
+                        noMoreComments = true;
+                        showEndOfCommentsMarker(historyEl);
+                        return;
+                    }
+
+                    // Snapshot returned fewer than the limit — this is the last page.
+                    var snapshotSize = 0;
+                    snap.forEach(function () { snapshotSize++; });
+                    if (snapshotSize < MESSAGES_PER_BATCH) {
+                        noMoreComments = true;
+                    }
 
                     for (var i = batch.length - 1; i >= 0; i--) {
                         var m = batch[i];
@@ -1691,6 +1720,10 @@
                         appendMessage(m, true); // prepend
                     }
 
+                    if (noMoreComments) {
+                        showEndOfCommentsMarker(historyEl);
+                    }
+
                     // Restore scroll position so the user stays anchored at the
                     // boundary they were reading.
                     historyEl.scrollTop = historyEl.scrollHeight - oldScrollHeight;
@@ -1700,6 +1733,7 @@
                 })
                 .then(function () {
                     isLoadingMoreComments = false;
+                    hideCommentsLoadingIndicator();
                 });
         }
 
@@ -1707,7 +1741,7 @@
         function handleCommentsScroll() {
             var historyEl = document.getElementById('chat-history');
             if (!historyEl) return;
-            if (historyEl.scrollTop <= 50 && !isLoadingMoreComments && oldestRenderedTs) {
+            if (historyEl.scrollTop <= 800 && !isLoadingMoreComments && !noMoreComments && oldestRenderedTs) {
                 loadMoreComments();
             }
         }
@@ -2541,6 +2575,7 @@
                 renderedCommentIds = {};
                 oldestRenderedTs = null;
                 isLoadingMoreComments = false;
+                noMoreComments = false;
             } catch (e) { /* ignore — page is going away */ }
         }
         window.addEventListener('pagehide', detachAllListeners);
