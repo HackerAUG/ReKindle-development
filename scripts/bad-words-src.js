@@ -2,8 +2,6 @@ import {
     RegExpMatcher,
     englishDataset,
     englishRecommendedTransformers,
-    englishRecommendedBlacklistMatcherTransformers,
-    skipNonAlphabeticTransformer,
 } from 'obscenity';
 
 // Initialised once at script-load time (deferred), not on first call,
@@ -11,13 +9,6 @@ import {
 var _matcher = new RegExpMatcher({
     ...englishDataset.build(),
     ...englishRecommendedTransformers,
-    // skipNonAlphabeticTransformer is deliberately excluded from
-    // englishRecommendedBlacklistMatcherTransformers in the library (issues #23/#46),
-    // but we need it to catch evasion via punctuation, e.g. "fuc.k".
-    blacklistMatcherTransformers: [
-        ...englishRecommendedBlacklistMatcherTransformers,
-        skipNonAlphabeticTransformer(),
-    ],
 });
 
 // Drop-in replacement for the old regex-based filterBadWords.

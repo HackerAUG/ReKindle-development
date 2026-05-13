@@ -1485,14 +1485,7 @@
   // scripts/bad-words-src.js
   var _matcher = new RegExpMatcher({
     ...englishDataset.build(),
-    ...englishRecommendedTransformers,
-    // skipNonAlphabeticTransformer is deliberately excluded from
-    // englishRecommendedBlacklistMatcherTransformers in the library (issues #23/#46),
-    // but we need it to catch evasion via punctuation, e.g. "fuc.k".
-    blacklistMatcherTransformers: [
-      ...englishRecommendedBlacklistMatcherTransformers,
-      skipNonAlphabeticTransformer()
-    ]
+    ...englishRecommendedTransformers
   });
   window.filterBadWords = function(text) {
     if (!text) return text;
