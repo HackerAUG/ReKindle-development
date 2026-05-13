@@ -2123,7 +2123,12 @@
                         };
 
                         if (data.type === 'dm') {
-                            var otherPerson = data.participants.filter(function (p) { return p !== currentUsername; })[0];
+                            var otherPerson = (data.participants || []).filter(function (p) { return p !== currentUsername; })[0];
+                            // Fall back to intendedParticipants for rooms where the recipient
+                            // hasn't been moved into the main participants array yet.
+                            if (!otherPerson && data.intendedParticipants) {
+                                otherPerson = data.intendedParticipants.filter(function (p) { return p !== currentUsername; })[0];
+                            }
                             if (otherPerson === 'ukiyo') {
                                 r.name = "Ukiyo (Developer)";
                             } else {
