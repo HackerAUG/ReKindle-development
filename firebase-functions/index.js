@@ -450,6 +450,39 @@ exports.registerUser = onCall(callOptions, async (request) => {
  *
  * Returns: { banned: boolean }
  */
+exports.getUserAuthStatus = onCall(callOptions, async (request) => {
+    if (!request.auth) {
+        throw new HttpsError('unauthenticated', 'Must be signed in.');
+    }
+    const { uid } = request.data;
+    if (!uid) {
+        throw new HttpsError('invalid-argument', 'Missing uid.');
+    }
+
+    const callerUid = request.auth.uid;
+    const callerRecord = await admin.auth().getUser(callerUid);
+    const isAdmin = callerRecord.email === 'ukiyo@rekindle.ink';
+    let isMod = false;
+    if (!isAdmin) {
+        const modSnap = await admin.database().ref('moderators/' + callerUid).once('value');
+        isMod = modSnap.exists();
+    }
+    if (!isAdmin && !isMod) {
+        throw new HttpsError('permission-denied', 'Admin or moderator access required.');
+    }
+
+    try {
+        const userRecord = await admin.auth().getUser(uid);
+        return { disabled: userRecord.disabled };
+    } catch (e) {
+        if (e.code === 'auth/user-not-found') {
+            return { disabled: null, notFound: true };
+        }
+        logger.error('getUserAuthStatus error:', e);
+        throw new HttpsError('internal', 'Failed to fetch user auth status: ' + e.message);
+    }
+});
+
 exports.checkIPOnLogin = onCall(callOptions, async (request) => {
     if (!request.auth) {
         throw new HttpsError('unauthenticated', 'Must be signed in to call this function.');

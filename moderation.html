@@ -654,6 +654,8 @@
         .admin-badge-timeout { border-color: #840; background: #fff3cd; }
         .admin-badge-ip      { border-color: #600; background: #f8d7da; }
         .admin-badge-ip-ok   { border-color: #080; background: #d4edda; }
+        .admin-badge-banned  { border-color: #c00; background: #f8d7da; }
+        .admin-badge-active  { border-color: #080; background: #d4edda; }
 
         .admin-section {
             display: flex;
@@ -805,6 +807,15 @@
         <div id="admin-user-info" style="display:none;"></div>
 
         <div id="admin-action-panels" style="display:none;">
+
+            <div class="admin-section">
+                <div class="admin-section-title">Firebase Account Status</div>
+                <div class="admin-action-row">
+                    <span id="admin-firebase-label" style="font-size:12px;font-family:'Courier New',monospace;">Account: —</span>
+                </div>
+            </div>
+
+            <hr class="divider">
 
             <div class="admin-section">
                 <div class="admin-section-title">IP Ban</div>
@@ -1043,6 +1054,7 @@
 <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-functions-compat.js"></script>
 <script>
     var firebaseConfig = {
         apiKey: "AIzaSyDY7x7vVmlYUyVZNLuCCmIQYa6PWFVfZqQ",
@@ -2189,7 +2201,8 @@
                 rtdb.ref('users_private/' + uid + '/ipAddress').once('value'),
                 firestore.collection('users').doc(uid).get(),
                 rtdb.ref('moderators/' + uid).once('value'),
-                rtdb.ref('social_timeouts/' + uid).once('value')
+                rtdb.ref('social_timeouts/' + uid).once('value'),
+                firebase.functions().httpsCallable('getUserAuthStatus')({ uid }).catch(function(err) { return { data: { error: err.message || String(err) } }; })
             ]);
 
             var ip = results[0].val() || null;
@@ -2202,6 +2215,17 @@
             var isMod = results[2].exists();
             var timeoutData = results[3].val() || null;
 
+            var authStatusResult = results[4];
+            var isFirebaseDisabled = false;
+            var authStatusError = null;
+            if (authStatusResult.data) {
+                if (typeof authStatusResult.data.disabled === 'boolean') {
+                    isFirebaseDisabled = authStatusResult.data.disabled;
+                } else if (authStatusResult.data.error) {
+                    authStatusError = authStatusResult.data.error;
+                }
+            }
+
             var isIpBanned = false;
             if (ip) {
                 var formattedIp = ip.replace(/\./g, '-').replace(/:/g, '_');
@@ -2209,7 +2233,7 @@
                 isIpBanned = ipBanSnap.exists();
             }
 
-            adminTargetUser = { uid, displayName, email, emailHandle, ip, isIpBanned, isPro, proExpiresAt, subscriptionType, stripeCustomerId, isMod, timeoutData };
+            adminTargetUser = { uid, displayName, email, emailHandle, ip, isIpBanned, isPro, proExpiresAt, subscriptionType, stripeCustomerId, isMod, timeoutData, isFirebaseDisabled, authStatusError };
 
             renderAdminUserInfo();
             setAdminStatus('Ready. Select an action below.');
@@ -2232,6 +2256,7 @@
             ? (u.timeoutData.durationHours + 'h — ' + (u.timeoutData.reason || '(no reason)'))
             : 'None';
         var ipLabel = u.ip || '(not recorded)';
+        var firebaseLabel = u.authStatusError ? 'Error checking status' : (u.isFirebaseDisabled ? 'Disabled (banned)' : 'Active');
 
         document.getElementById('admin-user-info').innerHTML =
             '<div class="admin-user-detail">'
@@ -2243,7 +2268,12 @@
             + '<span class="admin-badge' + (u.isMod ? ' admin-badge-mod' : '') + '">Mod: ' + escapeHtml(modLabel) + '</span>'
             + '<span class="admin-badge' + (u.timeoutData ? ' admin-badge-timeout' : '') + '">Timeout: ' + escapeHtml(timeoutLabel) + '</span>'
             + '<span class="admin-badge' + (u.ip ? (u.isIpBanned ? ' admin-badge-ip' : ' admin-badge-ip-ok') : '') + '">IP: ' + escapeHtml(ipLabel) + '</span>'
+            + '<span class="admin-badge' + (u.isFirebaseDisabled ? ' admin-badge-banned' : ' admin-badge-active') + '">Firebase: ' + escapeHtml(firebaseLabel) + '</span>'
             + '</div>';
+
+        var firebaseEl = document.getElementById('admin-firebase-label');
+        firebaseEl.textContent = 'Account: ' + firebaseLabel;
+        firebaseEl.style.color = u.authStatusError ? '#888' : (u.isFirebaseDisabled ? '#c00' : '#080');
 
         var ipEl = document.getElementById('admin-ip-label');
         ipEl.textContent = 'IP: ' + ipLabel;
