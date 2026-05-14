@@ -250,30 +250,36 @@ export default {
                 }
             }
             else if (event.type === 'customer.subscription.updated') {
-                // PLAN CHANGE (upgrade/downgrade) or RENEWAL
                 const subscription = event.data.object;
                 const customerId = subscription.customer;
-                let currentPeriodEnd = subscription.current_period_end; // Unix timestamp
+                const status = subscription.status;
 
-                // Fallback: Check items if top-level is missing
-                if (!currentPeriodEnd && subscription.items && subscription.items.data && subscription.items.data.length > 0) {
-                    currentPeriodEnd = subscription.items.data[0].current_period_end;
-                }
-
-
-                if (customerId && currentPeriodEnd) {
-                    // Use the exact period end from Stripe + 2 day buffer
-                    const expiresAt = new Date((currentPeriodEnd * 1000) + (86400 * 1000 * 2));
-                    const result = await extendSubscriptionByCustomerId(env, customerId, { expiresAt });
-
-                    if (result.status === 'user_not_found') {
-                        // Retry later if user is not yet linked
-                        return new Response('Retry: User not found yet', { status: 500 });
+                // Overdue or exhausted retries — revoke access
+                if (status === 'past_due' || status === 'unpaid') {
+                    if (customerId) {
+                        await revokeProByCustomerId(env, customerId);
+                        return new Response(`Success: Pro paused due to ${status} payment`, { status: 200 });
                     }
-                    return new Response(`Success: Subscription updated`, { status: 200 });
-                } else {
-                    return new Response('Missing customer ID or period end', { status: 200 });
                 }
+
+                // Payment recovered or plan changed — extend access
+                if (status === 'active' || status === 'trialing') {
+                    let currentPeriodEnd = subscription.current_period_end;
+                    if (!currentPeriodEnd && subscription.items?.data?.length > 0) {
+                        currentPeriodEnd = subscription.items.data[0].current_period_end;
+                    }
+
+                    if (customerId && currentPeriodEnd) {
+                        const expiresAt = new Date((currentPeriodEnd * 1000) + (86400 * 1000 * 2));
+                        const result = await extendSubscriptionByCustomerId(env, customerId, { expiresAt });
+                        if (result.status === 'user_not_found') {
+                            return new Response('Retry: User not found yet', { status: 500 });
+                        }
+                        return new Response(`Success: Subscription updated`, { status: 200 });
+                    }
+                }
+
+                return new Response(`Ignored subscription.updated with status: ${status}`, { status: 200 });
             }
             else if (event.type === 'customer.subscription.deleted') {
                 // CANCELLATION
