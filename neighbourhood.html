@@ -717,6 +717,8 @@
                                     id="profile-view-hometown">-</span>
                                 <b data-i18n="neighbourhood.lbl.language">Languages:</b> <span
                                     id="profile-view-language">-</span>
+                                <b data-i18n="neighbourhood.lbl.joined">Joined:</b> <span
+                                    id="profile-view-joined">-</span>
                             </div>
 
                             <div class="header-sep" style="margin-top:20px;" data-i18n="neighbourhood.header.social">
@@ -994,6 +996,8 @@
                                     id="popup-view-hometown">-</span>
                                 <b data-i18n="neighbourhood.lbl.language">Languages:</b> <span
                                     id="popup-view-language">-</span>
+                                <b data-i18n="neighbourhood.lbl.joined">Joined:</b> <span
+                                    id="popup-view-joined">-</span>
                             </div>
                             <div class="header-sep" style="margin-top:20px;" data-i18n="neighbourhood.header.social">
                                 Socials</div>
@@ -1421,6 +1425,7 @@
                             displayName: currentUser.displayName || fallbackName,
                             email: currentUser.email || "",
                             avatarSeed: Math.floor(Math.random() * 10000),
+                            createdAt: firebase.database.ServerValue.TIMESTAMP,
                             lastActive: firebase.database.ServerValue.TIMESTAMP
                         };
                         db.ref('users_public/' + currentUser.uid).set(myProfile);
@@ -1662,6 +1667,15 @@
                 if (age !== null) ageStr = age;
             }
             document.getElementById('profile-view-age').innerText = ageStr;
+
+            // Joined
+            let joinedStr = '-';
+            const joinedTs = profile.createdAt || (isMe && currentUser && currentUser.metadata && currentUser.metadata.creationTime ? new Date(currentUser.metadata.creationTime).getTime() : null);
+            if (joinedTs) {
+                const joinedDate = new Date(Number(joinedTs));
+                joinedStr = window.rekindleFormatTime ? window.rekindleFormatTime(joinedDate, { year: 'numeric', month: 'long', day: 'numeric' }) : joinedDate.toLocaleDateString();
+            }
+            document.getElementById('profile-view-joined').innerText = joinedStr;
 
             // Travel
             document.getElementById('profile-view-travel').innerText = profile.travel || '-';
@@ -2497,6 +2511,14 @@
             document.getElementById('popup-view-occupation').innerText = user.occupation || '-';
             document.getElementById('popup-view-hometown').innerText = user.hometown || '-';
             document.getElementById('popup-view-language').innerText = user.language || '-';
+
+            // Joined
+            let popupJoinedStr = '-';
+            if (user.createdAt) {
+                const popupJoinedDate = new Date(Number(user.createdAt));
+                popupJoinedStr = window.rekindleFormatTime ? window.rekindleFormatTime(popupJoinedDate, { year: 'numeric', month: 'long', day: 'numeric' }) : popupJoinedDate.toLocaleDateString();
+            }
+            document.getElementById('popup-view-joined').innerText = popupJoinedStr;
 
             // Socials
             const socialContainer = document.getElementById('popup-view-socials');
