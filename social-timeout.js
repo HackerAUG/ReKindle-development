@@ -7,23 +7,21 @@
  *  - If no timeout exists or it has expired, calls onClearCallback() immediately.
  *  - If timed out, shows a blocking modal with reason + countdown and never calls onClearCallback()
  *    until the countdown expires.
+ *  - Also watches for newly-applied timeouts while the social app is already open.
  */
 
 // eslint-disable-next-line no-unused-vars
-function checkSocialTimeout(rtdb, uid, onClear) {
-    var CACHE_KEY = 'sto_clear';      // "no timeout" cache
+function checkSocialTimeout(rtdb, uid, onClear, options) {
+    options = options || {};
     var OFFSET_KEY = 'sto_offset';    // server time offset cache
-    var CACHE_TTL = 5 * 60 * 1000;   // 5 minutes — bans propagate within this window
     var OFFSET_TTL = 60 * 60 * 1000; // 1 hour — server offset is stable
+    var didClear = false;
 
-    // Fast path: cached "no timeout" result for this user
-    try {
-        var cached = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null');
-        if (cached && cached.uid === uid && (Date.now() - cached.t < CACHE_TTL)) {
-            onClear();
-            return;
-        }
-    } catch (e) {}
+    function clearOnce() {
+        if (didClear) return;
+        didClear = true;
+        onClear();
+    }
 
     // Try cached server time offset to avoid that RTDB read
     var cachedOffset = null;
@@ -43,48 +41,108 @@ function checkSocialTimeout(rtdb, uid, onClear) {
         });
 
     getOffset.then(function (serverOffset) {
-        rtdb.ref('social_timeouts/' + uid).once('value').then(function (snap) {
+        return rtdb.ref('social_timeouts/' + uid).once('value').then(function (snap) {
             var data = snap.val();
+            _startSocialTimeoutWatcher(rtdb, uid, serverOffset, data, clearOnce);
 
-            // No timeout set for this user — cache and proceed
-            if (!data || !data.reason || !data.durationHours) {
-                try { localStorage.setItem(CACHE_KEY, JSON.stringify({ uid: uid, t: Date.now() })); } catch (e) {}
-                onClear();
-                return;
-            }
-
-            var reason = data.reason;
-            var durationMs = data.durationHours * 60 * 60 * 1000;
-            var seenRef = rtdb.ref('users_private/' + uid + '/timeout_seen');
-
-            seenRef.once('value').then(function (seenSnap) {
-                var seenAt = seenSnap.val();
-
-                if (!seenAt) {
-                    // First time seeing — write server timestamp, then re-read it
-                    seenRef.set(firebase.database.ServerValue.TIMESTAMP).then(function () {
-                        seenRef.once('value').then(function (freshSnap) {
-                            seenAt = freshSnap.val();
-                            _evaluateTimeout(reason, durationMs, seenAt, serverOffset, onClear);
-                        });
-                    });
-                } else {
-                    _evaluateTimeout(reason, durationMs, seenAt, serverOffset, onClear);
-                }
-            });
+            return _handleTimeoutData(rtdb, uid, data, serverOffset, clearOnce, options);
         });
     })['catch'](function (err) {
         console.error('social-timeout: Error checking timeout', err);
         // On error, let the user through rather than blocking them permanently
-        onClear();
+        clearOnce();
     });
 }
+
+var _socialTimeoutWatchers = {};
 
 function _getServerNow(offset) {
     return Date.now() + offset;
 }
 
-function _evaluateTimeout(reason, durationMs, seenAt, serverOffset, onClear) {
+function _isTimeoutDataValid(data) {
+    return !!(data && data.reason && data.durationHours);
+}
+
+function _timeoutSignature(data) {
+    if (!_isTimeoutDataValid(data)) return '';
+    return [
+        data.reason,
+        data.durationHours,
+        data.createdAt || ''
+    ].join('|');
+}
+
+function _handleTimeoutData(rtdb, uid, data, serverOffset, onClear, options) {
+    if (!_isTimeoutDataValid(data)) {
+        onClear();
+        return Promise.resolve();
+    }
+
+    var reason = data.reason;
+    var durationMs = data.durationHours * 60 * 60 * 1000;
+    var seenRef = rtdb.ref('users_private/' + uid + '/timeout_seen');
+
+    return seenRef.once('value').then(function (seenSnap) {
+        var seenAt = seenSnap.val();
+
+        if (!seenAt) {
+            // First time seeing — write server timestamp, then re-read it
+            return seenRef.set(firebase.database.ServerValue.TIMESTAMP).then(function () {
+                return seenRef.once('value').then(function (freshSnap) {
+                    seenAt = freshSnap.val();
+                    _evaluateTimeout(reason, durationMs, seenAt, serverOffset, onClear, options);
+                });
+            });
+        }
+
+        _evaluateTimeout(reason, durationMs, seenAt, serverOffset, onClear, options);
+    });
+}
+
+function _startSocialTimeoutWatcher(rtdb, uid, serverOffset, initialData, onClear) {
+    if (_socialTimeoutWatchers[uid]) {
+        _socialTimeoutWatchers[uid].serverOffset = serverOffset;
+        _socialTimeoutWatchers[uid].lastSignature = _timeoutSignature(initialData);
+        if (!_socialTimeoutWatchers[uid].onClear) {
+            _socialTimeoutWatchers[uid].onClear = onClear;
+        }
+        return;
+    }
+
+    var watcher = {
+        ref: rtdb.ref('social_timeouts/' + uid),
+        serverOffset: serverOffset,
+        lastSignature: _timeoutSignature(initialData),
+        onClear: onClear
+    };
+    _socialTimeoutWatchers[uid] = watcher;
+
+    watcher.ref.on('value', function (snap) {
+        var data = snap.val();
+        var signature = _timeoutSignature(data);
+
+        if (signature === watcher.lastSignature) return;
+        watcher.lastSignature = signature;
+
+        if (!signature) {
+            if (_dismissTimeoutModal() && typeof watcher.onClear === 'function') {
+                watcher.onClear();
+            }
+            return;
+        }
+
+        _handleTimeoutData(rtdb, uid, data, watcher.serverOffset, function () {}, {
+            resumeOnExpiry: false
+        })['catch'](function (err) {
+            console.error('social-timeout: Error applying watched timeout', err);
+        });
+    }, function (err) {
+        console.error('social-timeout: Error watching timeout', err);
+    });
+}
+
+function _evaluateTimeout(reason, durationMs, seenAt, serverOffset, onClear, options) {
     var expiresAt = seenAt + durationMs;
     var serverNow = _getServerNow(serverOffset);
     var remaining = expiresAt - serverNow;
@@ -94,10 +152,37 @@ function _evaluateTimeout(reason, durationMs, seenAt, serverOffset, onClear) {
         return;
     }
 
-    _showTimeoutModal(reason, expiresAt, serverOffset, onClear);
+    if (options && typeof options.onBlocked === 'function') {
+        options.onBlocked({
+            reason: reason,
+            expiresAt: expiresAt,
+            remaining: remaining
+        });
+    }
+
+    _showTimeoutModal(
+        reason,
+        expiresAt,
+        serverOffset,
+        options && options.resumeOnExpiry === false ? function () {} : onClear
+    );
+}
+
+function _dismissTimeoutModal() {
+    var existing = document.getElementById('social-timeout-overlay');
+    if (existing && existing.parentNode) {
+        existing.parentNode.removeChild(existing);
+        return true;
+    }
+    return false;
 }
 
 function _showTimeoutModal(reason, expiresAt, serverOffset, onClear) {
+    var existing = document.getElementById('social-timeout-overlay');
+    if (existing && existing.parentNode) {
+        existing.parentNode.removeChild(existing);
+    }
+
     // Create overlay
     var overlay = document.createElement('div');
     overlay.id = 'social-timeout-overlay';

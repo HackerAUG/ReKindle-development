@@ -3352,20 +3352,49 @@
         }
 
         var isSendingMessage = false;
+
+        function resetSendState() {
+            isSendingMessage = false;
+            var sendBtn = document.getElementById('send-btn');
+            if (sendBtn) {
+                sendBtn.disabled = false;
+                sendBtn.style.opacity = '1';
+            }
+        }
+
+        function markSendBusy() {
+            isSendingMessage = true;
+            var sendBtn = document.getElementById('send-btn');
+            if (sendBtn) {
+                sendBtn.disabled = true;
+                sendBtn.style.opacity = '0.5';
+            }
+        }
+
         function sendMessage() {
             if (isSendingMessage) return;
+            if (!currentUser) return;
+
+            // Block sends if timeout modal is active (real-time moderator timeout)
+            if (document.getElementById('social-timeout-overlay')) {
+                showModal("You are temporarily restricted from posting.", false);
+                return;
+            }
+
+            var inputEl = document.getElementById('msg-input');
+            var text = inputEl.value.trim();
+
+            // Limit max 1 blank line between text (max 2 consecutive newlines)
+            if (text) {
+                text = text.replace(/(\n\s*){3,}/g, '\n\n').trim();
+            }
+
+            if (!text) return;
+            if (text.length > 1000) { showModal('Messages cannot exceed 1000 characters.'); return; }
+
             checkRules(function () {
-                var inputEl = document.getElementById('msg-input');
-                var text = inputEl.value.trim();
-
-                // Limit max 1 blank line between text (max 2 consecutive newlines)
-                if (text) {
-                    text = text.replace(/(\n\s*){3,}/g, '\n\n').trim();
-                }
-
-                if (!text) return;
-                if (text.length > 1000) { showModal('Messages cannot exceed 1000 characters.'); return; }
-                if (!currentUser) return;
+                markSendBusy();
+                setTimeout(function() { isSendingMessage = false; }, 3000); // failsafe unlock
 
                 // SPAM PROTECTION: Check if user is dominating the general channel
                 if (currentRoomId === 'general') {
@@ -3374,19 +3403,12 @@
 
                     if (!canUserSend(historyForAlgo, currentUsername)) {
                         showModal('To ensure a good experience for everyone, please slow down. You\'ve been posting a lot recently.', false);
+                        resetSendState();
                         return;
                     }
                 }
 
                 inputEl.value = '';
-                isSendingMessage = true;
-                setTimeout(function() { isSendingMessage = false; }, 3000); // failsafe unlock
-                
-                var sendBtn = document.getElementById('send-btn');
-                if (sendBtn) {
-                    sendBtn.disabled = true;
-                    sendBtn.style.opacity = '0.5';
-                }
 
                 // BRANCH: Use Realtime Database via Worker (for translation) or direct
                 if (currentRoomId === 'general') {
@@ -3825,23 +3847,16 @@
             generalChatRef.push(messageData).then(function (ref) {
                 var msgId = ref.key;
 
-                isSendingMessage = false;
-                var sendBtn = document.getElementById('send-btn');
-                if (sendBtn) {
-                    sendBtn.disabled = false;
-                    sendBtn.style.opacity = '1';
-                }
+                resetSendState();
 
                 // Fire translation in background with retry — child_changed will update the bubble when done
                 fireTranslationRequest(currentUsername, currentUser.uid, text, msgId, 1);
             })['catch'](function (e) {
-                isSendingMessage = false;
-                var sendBtn = document.getElementById('send-btn');
-                if (sendBtn) {
-                    sendBtn.disabled = false;
-                    sendBtn.style.opacity = '1';
-                }
+                resetSendState();
                 console.error("Error sending general message:", e);
+                if (e && e.code === 'PERMISSION_DENIED') {
+                    showModal("You are temporarily restricted from posting.", false);
+                }
             });
         }
 
@@ -3855,20 +3870,13 @@
             };
 
             generalChatRef.push(messageData).then(function() {
-                isSendingMessage = false;
-                var sendBtn = document.getElementById('send-btn');
-                if (sendBtn) {
-                    sendBtn.disabled = false;
-                    sendBtn.style.opacity = '1';
-                }
+                resetSendState();
             })['catch'](function (e) {
-                isSendingMessage = false;
-                var sendBtn = document.getElementById('send-btn');
-                if (sendBtn) {
-                    sendBtn.disabled = false;
-                    sendBtn.style.opacity = '1';
-                }
+                resetSendState();
                 console.error("Error sending general message:", e);
+                if (e && e.code === 'PERMISSION_DENIED') {
+                    showModal("You are temporarily restricted from posting.", false);
+                }
             });
         }
 
@@ -3886,12 +3894,7 @@
             // Add the message first
             roomRef.collection('messages').add(messageData)
                 .then(function () {
-                    isSendingMessage = false;
-                    var sendBtn = document.getElementById('send-btn');
-                    if (sendBtn) {
-                        sendBtn.disabled = false;
-                        sendBtn.style.opacity = '1';
-                    }
+                    resetSendState();
                     // Update room activity
                     return roomRef.set({
                         lastMessageAt: firebase.firestore.FieldValue.serverTimestamp()
@@ -3914,6 +3917,7 @@
                     }
                 })
             ['catch'](function (e) {
+                resetSendState();
                 console.error("Error sending message:", e);
             });
         }

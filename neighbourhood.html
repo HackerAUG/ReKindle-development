@@ -3157,6 +3157,10 @@
 
         function submitComment(postId) {
             if (!currentUser) { showAlertModal("Please log in to comment."); return; }
+            if (document.getElementById('social-timeout-overlay')) {
+                showAlertModal("You are temporarily restricted from posting.");
+                return;
+            }
             if (!myProfile || !myProfile.displayName || myProfile.displayName === 'Anonymous') { showPublicProfileModal(); return; }
 
             const input = document.getElementById('comment-input-' + postId);
@@ -3176,7 +3180,11 @@
                 input.value = '';
                 input.disabled = false;
             }).catch(err => {
-                showAlertModal("Error posting comment: " + err.message);
+                if (err && err.code === 'PERMISSION_DENIED') {
+                    showAlertModal("You are temporarily restricted from posting.");
+                } else {
+                    showAlertModal("Error posting comment: " + err.message);
+                }
                 input.disabled = false;
             });
         }
@@ -3297,6 +3305,10 @@
 
         function submitPost() {
             if (!currentUser) { showAlertModal("Please log in to post."); return; }
+            if (document.getElementById('social-timeout-overlay')) {
+                showAlertModal("You are temporarily restricted from posting.");
+                return;
+            }
 
             // CHECK 0: Public Profile with proper name
             if (!myProfile || !myProfile.displayName || myProfile.displayName === 'Anonymous') {
@@ -3365,7 +3377,11 @@
                                 input.value = '';
                                 if (btn) btn.disabled = false;
                             }).catch(firebaseErr => {
-                                showAlertModal("Error posting: " + firebaseErr.message);
+                                if (firebaseErr && firebaseErr.code === 'PERMISSION_DENIED') {
+                                    showAlertModal("You are temporarily restricted from posting.");
+                                } else {
+                                    showAlertModal("Error posting: " + firebaseErr.message);
+                                }
                                 if (btn) btn.disabled = false;
                             });
                         });
@@ -3379,7 +3395,11 @@
                         input.value = '';
                         if (btn) btn.disabled = false;
                     }).catch(firebaseErr => {
-                        showAlertModal("Error posting: " + firebaseErr.message);
+                        if (firebaseErr && firebaseErr.code === 'PERMISSION_DENIED') {
+                            showAlertModal("You are temporarily restricted from posting.");
+                        } else {
+                            showAlertModal("Error posting: " + firebaseErr.message);
+                        }
                         if (btn) btn.disabled = false;
                     });
                 });
@@ -3392,7 +3412,11 @@
                     input.value = '';
                     if (btn) btn.disabled = false;
                 }).catch(err => {
-                    showAlertModal("Error posting: " + err.message);
+                    if (err && err.code === 'PERMISSION_DENIED') {
+                        showAlertModal("You are temporarily restricted from posting.");
+                    } else {
+                        showAlertModal("Error posting: " + err.message);
+                    }
                     if (btn) btn.disabled = false;
                 });
             }

@@ -2171,6 +2171,10 @@
         var isPostingComment = false;
         function postComment() {
             if (isPostingComment) return;
+            if (document.getElementById('social-timeout-overlay')) {
+                showAlertModal("You are temporarily restricted from posting.");
+                return;
+            }
             checkRules(function () {
                 var input = document.getElementById('msg-input');
                 var text = input.value.trim();
@@ -2228,7 +2232,11 @@
                         btnSend.disabled = false;
                         btnSend.style.opacity = '1';
                     }
-                    console.error("Error posting comment:", err);
+                    if (err && err.code === 'PERMISSION_DENIED') {
+                        showAlertModal("You are temporarily restricted from posting.");
+                    } else {
+                        console.error("Error posting comment:", err);
+                    }
                 });
             });
         }
@@ -2438,6 +2446,10 @@
             }
 
             var doSubmit = function() {
+                if (document.getElementById('social-timeout-overlay')) {
+                    showAlertModal("You are temporarily restricted from posting.");
+                    return;
+                }
                 checkRules(function () {
                     if (editingTopicId) {
                         // UPDATING EXISTING
@@ -2447,6 +2459,12 @@
                             icon: selectedIconSvg
                         }).then(function () {
                             closeCreateModal();
+                        }).catch(function(err) {
+                            if (err && err.code === 'PERMISSION_DENIED') {
+                                showAlertModal("You are temporarily restricted from posting.");
+                            } else {
+                                console.error("Error updating topic:", err);
+                            }
                         });
                     } else {
                         // CREATING NEW
@@ -2522,6 +2540,12 @@
                 }).then(function () {
                     closeCreateModal();
                     selectTopic(newTopicRef.key);
+                }).catch(function(err) {
+                    if (err && err.code === 'PERMISSION_DENIED') {
+                        showAlertModal("You are temporarily restricted from posting.");
+                    } else {
+                        console.error("Error creating topic:", err);
+                    }
                 });
             }
         }
