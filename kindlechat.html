@@ -1411,6 +1411,8 @@
         // pagination, and live updates. Reset whenever the room changes.
         var renderedKindlechatIds = {};
         var generalDomMsgCount = 0;       // Counter replacing querySelectorAll('.msg') in kcAddedHandler
+        var dmInitialLoaded = false;      // Tracks whether first Firestore DM snapshot has rendered
+        var renderedDmIds = {};           // Tracks rendered DM message IDs (like renderedKindlechatIds)
         var kcDeleteHandler = null;       // child_removed handler ref (on generalListener query)
         var kcChangedHandler = null;      // limitToLast(child_changed) handler ref
         var kcAddedHandler = null;        // limitToLast(child_added) handler ref
@@ -2510,6 +2512,8 @@
             kcDeleteHandler = null;
             renderedKindlechatIds = {};
             generalDomMsgCount = 0;
+            dmInitialLoaded = false;
+            renderedDmIds = {};
             // Reset Pixel Cache on reload
             window.pixelGridCache = {};
 
@@ -2564,13 +2568,77 @@
 
                 var isScrolledToBottom = history.scrollHeight - history.clientHeight <= history.scrollTop + 100;
 
-                snapshot.docChanges().forEach(function (change) {
-                    if (change.type === 'added' || change.type === 'modified') {
-                        var msgData = change.doc.data();
-                        var msgId = change.doc.id;
-                        renderMessage(msgData, msgId);
+                if (!dmInitialLoaded) {
+                    // First snapshot: rebuild DOM in guaranteed query order
+                    if (snapshot.docs.length > 0) {
+                        history.innerHTML = '';
+                        renderedDmIds = {};
+                        snapshot.docs.forEach(function (doc) {
+                            renderMessage(doc.data(), doc.id);
+                            renderedDmIds[doc.id] = true;
+                        });
                     }
-                });
+                    dmInitialLoaded = true;
+                } else {
+                    // Incremental updates: handle added/modified/removed correctly
+                    var addedIds = {};
+                    var modifiedIds = {};
+
+                    snapshot.docChanges().forEach(function (change) {
+                        if (change.type === 'added') {
+                            addedIds[change.doc.id] = true;
+                        } else if (change.type === 'modified') {
+                            modifiedIds[change.doc.id] = true;
+                        } else if (change.type === 'removed') {
+                            delete renderedDmIds[change.doc.id];
+                            var el = history.querySelector('.msg[data-msg-id="' + change.doc.id + '"]');
+                            if (el && el.parentNode) {
+                                el.parentNode.removeChild(el);
+                            }
+                        }
+                    });
+
+                    // Clear placeholder if we're adding the first real message
+                    if (Object.keys(addedIds).length > 0 &&
+                        history.children.length === 1 &&
+                        history.firstChild &&
+                        history.firstChild.textContent &&
+                        history.firstChild.textContent.indexOf('No messages yet') !== -1) {
+                        history.innerHTML = '';
+                    }
+
+                    // Insert added messages in snapshot.docs order to prevent scrambling
+                    snapshot.docs.forEach(function (doc) {
+                        if (!addedIds[doc.id]) return;
+                        if (renderedDmIds[doc.id]) return; // dedupe
+                        renderedDmIds[doc.id] = true;
+
+                        // Find the next already-rendered message in query order to insert before
+                        var beforeNode = null;
+                        var found = false;
+                        for (var i = 0; i < snapshot.docs.length; i++) {
+                            if (snapshot.docs[i].id === doc.id) {
+                                found = true;
+                                continue;
+                            }
+                            if (!found) continue;
+                            var nextEl = history.querySelector('.msg[data-msg-id="' + snapshot.docs[i].id + '"]');
+                            if (nextEl) {
+                                beforeNode = nextEl;
+                                break;
+                            }
+                        }
+
+                        renderMessage(doc.data(), doc.id, false, beforeNode);
+                    });
+
+                    // Update modified messages in place
+                    snapshot.docChanges().forEach(function (change) {
+                        if (change.type === 'modified' && renderedDmIds[change.doc.id]) {
+                            renderMessage(change.doc.data(), change.doc.id);
+                        }
+                    });
+                }
 
                 // Cache messages for next load
                 if (snapshot.docs.length > 0) {
@@ -2587,13 +2655,19 @@
                     var merged = currentCache;
 
                     newMsgs.forEach(function (nm) {
-                        // Update or Append
                         var idx = merged.findIndex(function (cm) { return cm.id === nm.id; });
                         if (idx !== -1) {
                             merged[idx] = nm;
                         } else {
                             merged.push(nm);
                         }
+                    });
+
+                    // Sort cache by timestamp so offline reload doesn't scramble order
+                    merged.sort(function (a, b) {
+                        var ta = a.data.timestamp ? (a.data.timestamp.toMillis ? a.data.timestamp.toMillis() : a.data.timestamp) : 0;
+                        var tb = b.data.timestamp ? (b.data.timestamp.toMillis ? b.data.timestamp.toMillis() : b.data.timestamp) : 0;
+                        return ta - tb;
                     });
 
                     cacheMessages(roomId, merged, newLastTs);
@@ -3024,7 +3098,7 @@
             });
         }
 
-        function renderMessage(msg, msgId, prepend) {
+        function renderMessage(msg, msgId, prepend, beforeNode) {
             var history = document.getElementById('chat-history');
             var div = document.createElement('div');
             var toggleBtnHtml = '';
@@ -3290,6 +3364,8 @@
                 history.replaceChild(div, existing);
             } else if (prepend) {
                 history.insertBefore(div, history.firstChild);
+            } else if (beforeNode) {
+                history.insertBefore(div, beforeNode);
             } else {
                 history.appendChild(div);
             }
