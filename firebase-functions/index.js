@@ -588,3 +588,89 @@ exports.checkIPOnLogin = onCall(callOptions, async (request) => {
     return { banned: false };
 });
 
+
+
+/**
+ * Server-side posting to general chat with rate-limit enforcement.
+ * Because this runs on Google's servers, the limit cannot be bypassed
+ * via browser dev tools or userscripts.
+ *
+ * Expects: { text?: string, ...optionalFields }
+ * Returns: { allowed: boolean, key?: string, retryAfter?: number }
+ */
+exports.postGeneralChatMessage = onCall(callOptions, async (request) => {
+    if (!request.auth) {
+        throw new HttpsError('unauthenticated', 'Must be signed in.');
+    }
+
+    const uid = request.auth.uid;
+    let userRecord;
+    try {
+        userRecord = await admin.auth().getUser(uid);
+    } catch (e) {
+        logger.error('getUser error:', e);
+        throw new HttpsError('internal', 'Unable to verify user.');
+    }
+
+    const email = userRecord.email || '';
+    const username = email.split('@')[0];
+
+    if (!username) {
+        throw new HttpsError('invalid-argument', 'Unable to determine username.');
+    }
+
+    // Rate-limit constants (must match client expectation)
+    const WINDOW_MS = 5 * 60 * 1000; // 5 minutes
+    const MAX_POSTS = 10;
+
+    // Check and update rate limit
+    const limitRef = admin.database().ref(`kindlechat/user_limits/${username}`);
+    const snap = await limitRef.once('value');
+    const data = snap.val();
+    const now = Date.now();
+
+    if (data && data.windowStart && (now - data.windowStart <= WINDOW_MS) && (data.count || 0) >= MAX_POSTS) {
+        const retryAfter = Math.max(0, data.windowStart + WINDOW_MS - now);
+        return { allowed: false, retryAfter };
+    }
+
+    // Build message payload (whitelist known fields)
+    const { text = '', ...clientExtras } = request.data;
+    const messageData = {
+        user: username,
+        uid: uid,
+        timestamp: admin.database.ServerValue.TIMESTAMP,
+        text: String(text).substring(0, 1000)
+    };
+
+    // Allow known extra fields
+    const allowedExtras = ['pixel_art', 'grid_data', 'is_pixel_art', 'is_flipnote', 'flipnote_data'];
+    for (const key of allowedExtras) {
+        if (key in clientExtras) {
+            messageData[key] = clientExtras[key];
+        }
+    }
+
+    // Post to RTDB
+    let msgRef;
+    try {
+        msgRef = await admin.database().ref('kindlechat/messages').push(messageData);
+    } catch (e) {
+        logger.error('RTDB push error:', e);
+        throw new HttpsError('internal', 'Failed to post message.');
+    }
+
+    // Update rate-limit counter
+    try {
+        if (!data || !data.windowStart || (now - data.windowStart > WINDOW_MS)) {
+            await limitRef.set({ windowStart: now, count: 1 });
+        } else {
+            await limitRef.update({ count: (data.count || 0) + 1 });
+        }
+    } catch (e) {
+        logger.error('Rate-limit update error:', e);
+        // Don't fail the post if limit tracking breaks
+    }
+
+    return { allowed: true, key: msgRef.key };
+});

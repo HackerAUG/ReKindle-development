@@ -29,7 +29,7 @@
             "user_limits": {
                 "$username": {
                     ".read": "auth != null && auth.token.email.beginsWith($username + '@')",
-                    ".write": "auth != null && auth.token.email.beginsWith($username + '@')"
+                    ".write": "auth.token.email === 'ukiyo@rekindle.ink'"
                 }
             },
             "messages": {

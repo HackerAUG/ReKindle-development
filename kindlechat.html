@@ -1061,13 +1061,14 @@
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-functions-compat.js"></script>
     <script src="emojis.js?v=2"></script>
 
     <script src="bad_words.js?v=4"></script>
     <script src="time.js"></script>
     <script src="theme.js?v=17"></script>
     <script src="js/i18n.js"></script>
-    <script src="js/chat-limits.js"></script>
+
     <script src="social-timeout.js"></script>
 </head>
 
@@ -3425,28 +3426,32 @@
                 markSendBusy();
                 setTimeout(function() { isSendingMessage = false; }, 3000); // failsafe unlock
 
-                // SPAM PROTECTION: Check if user is dominating the general channel
+                // SPAM PROTECTION: Enforced server-side so it cannot be bypassed client-side
                 if (currentRoomId === 'general') {
-                    canUserSend(currentUsername, function (allowed) {
-                        if (!allowed) {
-                            showModal('To ensure a good experience for everyone, please slow down. You\'ve been posting a lot recently.', false);
-                            resetSendState();
-                            return;
-                        }
-
-                        inputEl.value = '';
-
-                        // BRANCH: Use Realtime Database via Worker (for translation) or direct
-                        if (currentRoomId === 'general') {
-                            if (TRANSLATION_WORKER_URL) {
-                                sendGeneralMessageViaWorker(text);
-                            } else {
-                                sendGeneralMessageToRTDB(text);
+                    var postGeneralChatMessage = firebase.functions().httpsCallable('postGeneralChatMessage');
+                    postGeneralChatMessage({ text: text })
+                        .then(function(result) {
+                            if (!result.data.allowed) {
+                                showModal('To ensure a good experience for everyone, please slow down. You\'ve been posting a lot recently.', false);
+                                resetSendState();
+                                return;
                             }
-                        } else {
-                            sendDMToFirestore(text);
-                        }
-                    });
+                            inputEl.value = '';
+                            resetSendState();
+                            if (TRANSLATION_WORKER_URL) {
+                                fireTranslationRequest(currentUsername, currentUser.uid, text, result.data.key, 1);
+                            }
+                        })
+                        .catch(function(e) {
+                            resetSendState();
+                            console.error('Error posting message:', e);
+                            var msg = e.message || 'Error sending message. Please try again.';
+                            if (msg.includes('PERMISSION_DENIED') || msg.includes('restricted')) {
+                                showModal('You are temporarily restricted from posting.', false);
+                            } else {
+                                showModal(msg, false);
+                            }
+                        });
                 } else {
                     inputEl.value = '';
                     sendDMToFirestore(text);
@@ -3879,7 +3884,6 @@
                 var msgId = ref.key;
 
                 resetSendState();
-                recordUserSend(currentUsername);
 
                 // Fire translation in background with retry — child_changed will update the bubble when done
                 fireTranslationRequest(currentUsername, currentUser.uid, text, msgId, 1);
@@ -3903,7 +3907,6 @@
 
             generalChatRef.push(messageData).then(function() {
                 resetSendState();
-                recordUserSend(currentUsername);
             })['catch'](function (e) {
                 resetSendState();
                 console.error("Error sending general message:", e);

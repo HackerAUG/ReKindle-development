@@ -11,8 +11,8 @@
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js" integrity="sha384-+OubPIxtsLCp2uUuSsvWDuBB9oSIEDIYt2qQfYki+vDmSxc6GQsBbBPH6Z6x5wrq" crossorigin="anonymous"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js" integrity="sha384-6A4YFdmYPT5gmyRp8KegTqUol1Ff3navFf6eyVLErDtdSrikTwa1MQpVhFtubVlq" crossorigin="anonymous"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js" integrity="sha384-wgWsmYYQHit2pRy7gDddz6mH+S1x+rzuEL8DgPIg7lyJjm7pw3v6woxnm/0ULf9p" crossorigin="anonymous"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-functions-compat.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.js" integrity="sha384-4RMW82CWFobXY+HRHXe5go/V5acBhiIVGCT+2k7TEoxi7AiWKw8WoWb9qMU+FAFu" crossorigin="anonymous"></script>
-    <script src="js/chat-limits.js"></script>
 
     <style>
         /* SYSTEM 7 AESTHETICS */
@@ -1466,16 +1466,6 @@
                 return;
             }
 
-            // Shared rate-limit check
-            const allowed = await new Promise(function(resolve) {
-                canUserSend(currentUsername, resolve);
-            });
-            if (!allowed) {
-                const slowDownMsg = "To ensure a good experience for everyone, please slow down. You've been posting a lot recently.";
-                showInfoModal(slowDownMsg);
-                return;
-            }
-
             // Ensure we are up to date
             await performSave();
 
@@ -1484,24 +1474,24 @@
                 frames: await Promise.all(frames.map((_, i) => createThumbnail(i)))
             };
 
-            // Post to RTDB
-            const messageData = {
-                user: currentUsername,
-                timestamp: firebase.database.ServerValue.TIMESTAMP,
-                text: "",
-                is_flipnote: true,
-                flipnote_data: animData
-            };
-
-            rtdb.ref('kindlechat/messages').push(messageData)
-                .then(() => {
-                    recordUserSend(currentUsername);
-                    showInfoModal("Posted to KindleChat!");
-                })
-                .catch(e => {
-                    console.error(e);
-                    showInfoModal("Error posting.");
+            // Post to RTDB via server-side function so limits cannot be bypassed client-side
+            const postGeneralChatMessage = firebase.functions().httpsCallable('postGeneralChatMessage');
+            try {
+                const result = await postGeneralChatMessage({
+                    text: '',
+                    is_flipnote: true,
+                    flipnote_data: animData
                 });
+                if (!result.data.allowed) {
+                    const slowDownMsg = "To ensure a good experience for everyone, please slow down. You've been posting a lot recently.";
+                    showInfoModal(slowDownMsg);
+                    return;
+                }
+                showInfoModal("Posted to KindleChat!");
+            } catch (e) {
+                console.error(e);
+                showInfoModal("Error posting.");
+            }
         }
 
         function showInfoModal(msg) {

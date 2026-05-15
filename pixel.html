@@ -11,8 +11,8 @@
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-functions-compat.js"></script>
     <script src="js/i18n.js"></script>
-    <script src="js/chat-limits.js"></script>
 
     <style>
         /* SYSTEM 7 AESTHETICS */
@@ -978,27 +978,21 @@
                 // Use RTDB for 'general' chat messages (where artwork goes)
                 const messagesRef = rtdb.ref('kindlechat/messages');
 
-                // MODERATION CHECK (shared limit)
-                const allowed = await new Promise(function(resolve) {
-                    canUserSend(currentUsername, resolve);
+                // MODERATION CHECK — enforced server-side so it cannot be bypassed client-side
+                const postGeneralChatMessage = firebase.functions().httpsCallable('postGeneralChatMessage');
+                const result = await postGeneralChatMessage({
+                    text: window.t('pixel.status.shared', 'Shared a pixel art!'),
+                    pixel_art: dataUrl,
+                    grid_data: JSON.stringify(grid),
+                    is_pixel_art: true
                 });
-                if (!allowed) {
+                if (!result.data.allowed) {
                     closeModal('post-confirm-modal');
                     const slowDownMsg = window.t('pixel.status.slow_down', "To ensure a good experience for everyone, please slow down. You've been posting a lot recently.");
                     showModal(slowDownMsg, false);
                     return;
                 }
 
-                await messagesRef.push({
-                    user: currentUsername,
-                    text: window.t('pixel.status.shared', 'Shared a pixel art!'),
-                    pixel_art: dataUrl,
-                    grid_data: JSON.stringify(grid), // Send Grid Data for others to save
-                    is_pixel_art: true,
-                    timestamp: firebase.database.ServerValue.TIMESTAMP
-                });
-
-                recordUserSend(currentUsername);
                 closeModal('post-confirm-modal');
 
                 // Show success modal wrapper
