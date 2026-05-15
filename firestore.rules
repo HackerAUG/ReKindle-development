@@ -279,7 +279,7 @@ service cloud.firestore {
                         isValidText(request.resource.data.text);
         allow update: if request.auth != null &&
                          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions']);
-        allow delete: if false;
+        allow delete: if isDeveloper();
       }
 
       // Allow creating and updating rooms (needed for DMs)

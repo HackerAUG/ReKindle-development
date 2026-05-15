@@ -81,6 +81,7 @@
             }
         },
         "topic_comments": {
+            ".read": "auth.token.email === 'ukiyo@rekindle.ink'",
             "$topicId": {
                 ".read": "auth != null",
                 ".indexOn": [
