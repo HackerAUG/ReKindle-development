@@ -3432,7 +3432,8 @@
                     postGeneralChatMessage({ text: text })
                         .then(function(result) {
                             if (!result.data.allowed) {
-                                showModal('To ensure a good experience for everyone, please slow down. You\'ve been posting a lot recently.', false);
+                                var waitSec = Math.ceil((result.data.retryAfter || 20000) / 1000);
+                                showModal('Please wait ' + waitSec + ' seconds before posting again.', false);
                                 resetSendState();
                                 return;
                             }

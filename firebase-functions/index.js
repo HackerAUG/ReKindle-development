@@ -619,18 +619,27 @@ exports.postGeneralChatMessage = onCall(callOptions, async (request) => {
         throw new HttpsError('invalid-argument', 'Unable to determine username.');
     }
 
-    // Rate-limit constants (must match client expectation)
-    const WINDOW_MS = 5 * 60 * 1000; // 5 minutes
-    const MAX_POSTS = 10;
+    // Token-bucket rate limit: generous burst, short per-post cooldown
+    const MAX_TOKENS = 15;
+    const REFILL_MS = 20000; // 1 token every 20 seconds
 
-    // Check and update rate limit
     const limitRef = admin.database().ref(`kindlechat/user_limits/${username}`);
     const snap = await limitRef.once('value');
     const data = snap.val();
     const now = Date.now();
 
-    if (data && data.windowStart && (now - data.windowStart <= WINDOW_MS) && (data.count || 0) >= MAX_POSTS) {
-        const retryAfter = Math.max(0, data.windowStart + WINDOW_MS - now);
+    let tokens = MAX_TOKENS;
+    let lastRefill = now;
+
+    if (data && typeof data.tokens === 'number' && typeof data.lastRefill === 'number') {
+        const elapsed = now - data.lastRefill;
+        const refilled = Math.floor(elapsed / REFILL_MS);
+        tokens = Math.min(MAX_TOKENS, data.tokens + refilled);
+        lastRefill = data.lastRefill + (refilled * REFILL_MS);
+    }
+
+    if (tokens < 1) {
+        const retryAfter = REFILL_MS - ((now - lastRefill) % REFILL_MS);
         return { allowed: false, retryAfter };
     }
 
@@ -662,11 +671,8 @@ exports.postGeneralChatMessage = onCall(callOptions, async (request) => {
 
     // Update rate-limit counter
     try {
-        if (!data || !data.windowStart || (now - data.windowStart > WINDOW_MS)) {
-            await limitRef.set({ windowStart: now, count: 1 });
-        } else {
-            await limitRef.update({ count: (data.count || 0) + 1 });
-        }
+        tokens -= 1;
+        await limitRef.set({ tokens, lastRefill });
     } catch (e) {
         logger.error('Rate-limit update error:', e);
         // Don't fail the post if limit tracking breaks

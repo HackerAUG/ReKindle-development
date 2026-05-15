@@ -1483,7 +1483,8 @@
                     flipnote_data: animData
                 });
                 if (!result.data.allowed) {
-                    const slowDownMsg = "To ensure a good experience for everyone, please slow down. You've been posting a lot recently.";
+                    const waitSec = Math.ceil((result.data.retryAfter || 20000) / 1000);
+                    const slowDownMsg = 'Please wait ' + waitSec + ' seconds before posting again.';
                     showInfoModal(slowDownMsg);
                     return;
                 }
