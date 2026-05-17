@@ -769,10 +769,6 @@
                         </div>
 
                         <div style="margin-top:15px; max-width:300px; margin-left:auto; margin-right:auto;">
-                            <label class="form-label" data-i18n="neighbourhood.lbl.name">Display Name</label>
-                            <input type="text" id="input-name" class="input-field" placeholder="Make it catchy..."
-                                data-i18n-placeholder="neighbourhood.ph.name" maxlength="30" style="text-align:center;">
-
                             <div style="display: flex; margin-top: 10px">
                                 <div style="flex:1;">
                                     <label class="form-label" data-i18n="neighbourhood.lbl.pronouns"
@@ -1157,11 +1153,16 @@
                             supporterUsers[data.usernames[i]] = true;
                         }
                     } else {
-                        // Map format: keys are usernames
+                        // Map format: keys are usernames or emails
                         for (var key in data) {
                             if (key !== 'usernames' && key !== 'list') {
                                 if (isValidPro(data[key])) {
                                     supporterUsers[key] = true;
+                                    // Also index by the username portion of an email key
+                                    var atIdx = key.indexOf('@');
+                                    if (atIdx > 0) {
+                                        supporterUsers[key.substring(0, atIdx)] = true;
+                                    }
                                 }
                             }
                         }
@@ -1243,40 +1244,36 @@
             if (!feed) return;
             const cards = feed.querySelectorAll('.post-card');
             cards.forEach(card => {
-                const uid = card.dataset.uid; // I need to make sure I add data-uid to the card
+                const uid = card.dataset.uid;
                 if (!uid) return;
 
-                // Simple re-check logic (similar to renderPostItem)
-                const postUser = cachedUsers.find(u => u.uid === uid) || (currentUser && uid === currentUser.uid ? myProfile : null);
-
-                if (postUser) {
-                    const isDev = (uid === 'ukiyo' || postUser.email === 'ukiyo@rekindle.ink' || postUser.displayName === 'ukiyo' || postUser.displayName === 'ukiyo@rekindle.ink') || (currentUser && uid === currentUser.uid && currentUser.email === 'ukiyo@rekindle.ink');
-                    const isPro = postUser.kindlePlus || supporterUsers[postUser.displayName] || supporterUsers[postUser.email] || false;
-
+                window.rekindleFetchUserCard(db, uid, function (card) {
+                    if (!card) return;
+                    const username = card.username || '';
+                    const isDev = username === 'ukiyo';
+                    const isPro = supporterUsers[username] || false;
                     card.classList.remove('developer', 'supporter');
                     if (isDev) card.classList.add('developer');
                     else if (isPro) card.classList.add('supporter');
+                });
 
-                    // Note: We don't fully re-render innerHTML to avoid flickering/losing focus,
-                    // but classes and shadows will update.
-                    // For comments, we'd need to target individual comment items.
-                    const commentLists = card.querySelectorAll('.comments-list');
-                    commentLists.forEach(list => {
-                        const items = list.querySelectorAll('.comment-item');
-                        items.forEach(item => {
-                            const cUid = item.dataset.uid; // Need data-uid here too
-                            if (!cUuid) return;
-                            const cu = cachedUsers.find(u => u.uid === cUid) || (currentUser && cUid === currentUser.uid ? myProfile : null);
-                            if (cu) {
-                                const cid = (cUuid === 'ukiyo' || cu.email === 'ukiyo@rekindle.ink' || cu.displayName === 'ukiyo' || cu.displayName === 'ukiyo@rekindle.ink') || (currentUser && cUid === currentUser.uid && currentUser.email === 'ukiyo@rekindle.ink');
-                                const sip = cu.kindlePlus || supporterUsers[cu.displayName] || supporterUsers[cu.email] || false;
-                                item.classList.remove('developer', 'supporter');
-                                if (cid) item.classList.add('developer');
-                                else if (sip) item.classList.add('supporter');
-                            }
+                const commentLists = card.querySelectorAll('.comments-list');
+                commentLists.forEach(list => {
+                    const items = list.querySelectorAll('.comment-item');
+                    items.forEach(item => {
+                        const cUid = item.dataset.uid;
+                        if (!cUid) return;
+                        window.rekindleFetchUserCard(db, cUid, function (card) {
+                            if (!card) return;
+                            const username = card.username || '';
+                            const isDev = username === 'ukiyo';
+                            const isPro = supporterUsers[username] || false;
+                            item.classList.remove('developer', 'supporter');
+                            if (isDev) item.classList.add('developer');
+                            else if (isPro) item.classList.add('supporter');
                         });
                     });
-                }
+                });
             });
         }
 
@@ -1305,46 +1302,12 @@
         function saveProfile() {
             if (!currentUser) return;
 
-            const name = document.getElementById('input-name').value.trim();
             const bio = document.getElementById('input-bio').value.trim();
 
             // Get interests from toggle selection
             const interests = getSelectedInterests();
 
             const statusEl = document.getElementById('save-status');
-
-            // Name validation - admin can use restricted words
-            const isAdmin = currentUser.email === 'ukiyo@rekindle.ink';
-            const restricted = ['root', 'system', 'admin', 'administrator', 'mod', 'moderator', 'support', 'ukiyo', 'rekindle', 'wantban'];
-            const lowerName = name.toLowerCase();
-
-            const isBadWord = (u) => {
-                if (!window.filterBadWords) return false;
-                return window.filterBadWords(u) !== u;
-            };
-
-            if (!isAdmin) {
-                if (restricted.some(r => lowerName.includes(r))) {
-                    statusEl.innerText = window.t('neighbourhood.msg.invalid_name', "This name contains restricted words.");
-                    statusEl.style.color = 'red';
-                    setTimeout(() => {
-                        statusEl.innerText = '';
-                        statusEl.style.color = '';
-                    }, 3000);
-                    return;
-                }
-                
-                if (isBadWord(name)) {
-                    statusEl.innerText = window.t('neighbourhood.msg.invalid_name', "This name contains inappropriate language.");
-                    statusEl.style.color = 'red';
-                    setTimeout(() => {
-                        statusEl.innerText = '';
-                        statusEl.style.color = '';
-                    }, 3000);
-                    return;
-                }
-            }
-
             statusEl.innerText = window.t('neighbourhood.msg.saving', "Saving...");
             statusEl.style.color = '';
 
@@ -1366,7 +1329,6 @@
             };
 
             const profileData = {
-                displayName: name || window.t('common.anonymous', 'Anonymous'),
                 pronunciation: document.getElementById('input-pronunciation').value.trim(),
                 bio: bio,
                 occupation: document.getElementById('input-occupation').value.trim(),
@@ -1394,9 +1356,16 @@
             };
 
             // Write to /users_public/{uid}
-            // Use update to avoid overwriting other nodes like favorite_topics
+            // Use update to avoid overwriting other nodes
             db.ref('users_public/' + currentUser.uid).update(profileData)
                 .then(() => {
+                    // Also update user_cards mirror for fast avatar lookups
+                    const username = (currentUser.email || currentUser.uid).split('@')[0];
+                    db.ref('user_cards/' + currentUser.uid).update({
+                        username: username,
+                        avatarSeed: myProfile.avatarSeed,
+                        customAvatar: myProfile.customAvatar || null
+                    });
                     statusEl.innerText = window.t('neighbourhood.msg.saved', "Profile Saved!");
                     myProfile = Object.assign(myProfile || {}, profileData); // Update local cache
                     // Return to view mode after 500ms
@@ -1414,32 +1383,50 @@
         // LOAD MY PROFILE
         function loadMyProfile() {
             if (!currentUser) return;
-            db.ref('users_public/' + currentUser.uid).once('value')
-                .then(snapshot => {
-                    var data = snapshot.val();
+            Promise.all([
+                db.ref('users_public/' + currentUser.uid).once('value'),
+                db.ref('user_cards/' + currentUser.uid).once('value')
+            ]).then(([publicSnap, cardSnap]) => {
+                    var data = publicSnap.val();
+                    var card = cardSnap.val();
                     var fallbackName = (currentUser.email || currentUser.uid).split('@')[0];
 
                     if (!data) {
                         // Create basic profile if it doesn't exist (KindleChat style)
                         myProfile = {
-                            displayName: currentUser.displayName || fallbackName,
                             email: currentUser.email || "",
                             avatarSeed: Math.floor(Math.random() * 10000),
                             createdAt: firebase.database.ServerValue.TIMESTAMP,
                             lastActive: firebase.database.ServerValue.TIMESTAMP
                         };
                         db.ref('users_public/' + currentUser.uid).set(myProfile);
+                        // Also create user_cards mirror
+                        const username = (currentUser.email || currentUser.uid).split('@')[0];
+                        db.ref('user_cards/' + currentUser.uid).set({
+                            username: username,
+                            avatarSeed: myProfile.avatarSeed,
+                            customAvatar: null
+                        });
                     } else {
                         myProfile = data;
+                        // Merge avatar data from user_cards if available
+                        if (card) {
+                            if (card.avatarSeed !== undefined) myProfile.avatarSeed = card.avatarSeed;
+                            if (card.customAvatar !== undefined) myProfile.customAvatar = card.customAvatar;
+                        }
                         // Ensure email is synced if missing
                         if (!myProfile.email && currentUser.email) {
                             myProfile.email = currentUser.email;
                             db.ref('users_public/' + currentUser.uid).update({ email: currentUser.email });
                         }
+                        // Ensure user_cards mirror exists
+                        const username = (currentUser.email || currentUser.uid).split('@')[0];
+                        db.ref('user_cards/' + currentUser.uid).update({
+                            username: username,
+                            avatarSeed: myProfile.avatarSeed,
+                            customAvatar: myProfile.customAvatar || null
+                        });
                     }
-                    // ensure favorite_topics is preserved in local cache if we save later
-                    // actually update() handles that, but good to have complete object in myProfile
-
                     // Show repair button to ukiyo
                     if (currentUser.email === 'ukiyo@rekindle.ink') {
                         document.getElementById('btn-repair-handles').style.display = 'inline-block';
@@ -1447,7 +1434,6 @@
 
                     // Populate Inputs
                     const p = myProfile;
-                    document.getElementById('input-name').value = p.displayName || '';
                     document.getElementById('input-bio').value = p.bio || '';
 
                     // Populate selectedInterests Set
@@ -1505,12 +1491,21 @@
                 return;
             }
 
-            db.ref('users_public/' + uid).once('value').then(snap => {
-                const user = snap.val();
+            Promise.all([
+                db.ref('users_public/' + uid).once('value'),
+                db.ref('user_cards/' + uid).once('value')
+            ]).then(([publicSnap, cardSnap]) => {
+                const user = publicSnap.val();
                 if (!user) {
                     showAlertModal("User not found.");
                     switchTab('posts');
                     return;
+                }
+                // Merge avatar data from user_cards if available
+                const card = cardSnap.val();
+                if (card) {
+                    if (card.avatarSeed !== undefined) user.avatarSeed = card.avatarSeed;
+                    if (card.customAvatar !== undefined) user.customAvatar = card.customAvatar;
                 }
                 // Manually activate profile tab UI but populate with other user
                 document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -1623,16 +1618,11 @@
 
         function renderProfileView(profile, isMe) {
             const kName = getKindleName(profile);
-            const dName = profile.displayName || 'Anonymous';
 
             // Badge Logic
             let badgeHtml = '';
-            const isDev = (profile.uid === 'ukiyo' || profile.email === 'ukiyo@rekindle.ink' || dName === 'ukiyo' || dName === 'ukiyo@rekindle.ink') || (isMe && currentUser.email === 'ukiyo@rekindle.ink');
-            // Check Pro: profile.kindlePlus might be present if it's 'myProfile', but for public profiles we need to rely on what's passed in or stored.
-            // In renderProfileView, input 'profile' is usually from users_public.
-            // We can also check global supporterUsers map if we have it here? 
-            // supporterUsers is populated in fetchSupporters().
-            const isPro = profile.kindlePlus || supporterUsers[dName] || (profile.email && supporterUsers[profile.email]);
+            const isDev = (profile.uid === 'ukiyo' || profile.email === 'ukiyo@rekindle.ink' || kName === 'ukiyo' || kName === 'ukiyo@rekindle.ink') || (isMe && currentUser.email === 'ukiyo@rekindle.ink');
+            const isPro = profile.kindlePlus || supporterUsers[kName] || (profile.email && supporterUsers[profile.email]);
 
             if (isDev) {
                 badgeHtml = '<span class="dev-tag">DEV</span>';
@@ -1640,9 +1630,7 @@
                 badgeHtml = '<svg class="supporter-crown" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M2 4L5 18H19L22 4L15 11L12 4L9 11L2 4Z" stroke="currentColor" stroke-width="2" fill="none"/></svg>';
             }
 
-            const fullName = (dName === kName) ? escapeHtml(dName) :
-                `${escapeHtml(dName)} <span style="font-size:0.8em; font-weight:normal; color:#666; margin-left:5px;">@${escapeHtml(kName)}</span>`;
-            document.getElementById('profile-view-name').innerHTML = badgeHtml + fullName;
+            document.getElementById('profile-view-name').innerHTML = badgeHtml + escapeHtml(kName);
 
             const pronouns = profile.pronouns ? `(${profile.pronouns})` : '';
             const pronunciation = profile.pronunciation ? `• /${profile.pronunciation}/` : '';
@@ -1721,10 +1709,7 @@
             // Draw View Avatar
             drawAvatar('profile-view-avatar', profile.customAvatar || profile.avatarSeed || (profile.uid || ''));
 
-            // Load Favorite Topics (Async)
-            if (profile.uid) {
-                loadProfileTopics(profile.uid);
-            }
+
         }
 
         function messageUser(uid) {
@@ -1736,116 +1721,7 @@
             window.location.href = `kindlechat?chat_with=${uid}`;
         }
 
-        function loadProfileTopics(uid) {
-            const container = document.getElementById('profile-view-favorites');
-            // Check if we have favorites container, or create a specific one for Topics
-            // The HTML structure has a 'Favorites' section for Music/TV etc. 
-            // We should probably add a separate 'Topics' section or append to it.
-            // "Interests" is tags. "Favorites" is Key:Value.
-            // Let's create a NEW header "Favorite Topics" in the column if it doesn't exist.
 
-            // Actually, let's append a new section dynamically to the RIGHT column (where Interests/Favorites are).
-            // We need to target the parent column of 'profile-view-interests'.
-            // The parent is the second .column in .dual-column.
-            // We can append after 'profile-view-interests' container.
-
-            const interestsContainer = document.getElementById('profile-view-interests');
-            if (!interestsContainer) return;
-            const column = interestsContainer.parentElement;
-
-            // Remove existing topics section if any (re-render safety)
-            const existing = document.getElementById('profile-view-topics-container');
-            if (existing) existing.remove();
-
-            const topicsSection = document.createElement('div');
-            topicsSection.id = 'profile-view-topics-container';
-            topicsSection.style.marginTop = '20px';
-            topicsSection.style.display = 'none'; // Hide until loaded
-
-            topicsSection.innerHTML = `<div class="header-sep" data-i18n="neighbourhood.header.fav_topics">Favorite Topics</div>
-                                       <div id="profile-view-topics-list" style="display:flex; flex-wrap:wrap;"></div>`;
-
-            // Insert after interests
-            interestsContainer.parentNode.insertBefore(topicsSection, interestsContainer.nextSibling);
-
-            db.ref('users_public/' + uid + '/favorite_topics').once('value').then(snap => {
-                const favs = snap.val();
-                if (!favs) return; // No favorites
-
-                const topicIds = Object.keys(favs);
-                if (topicIds.length === 0) return;
-
-                topicsSection.style.display = 'block';
-                const list = document.getElementById('profile-view-topics-list');
-
-                topicIds.forEach(tid => {
-                    // Fetch topic details (title, icon)
-                    db.ref('topics/' + tid).once('value').then(tSnap => {
-                        const topic = tSnap.val();
-                        if (!topic) return;
-
-                        const item = document.createElement('div');
-                        item.className = 'topic-pill'; // We need to style this or reuse social-pill
-                        item.style.display = 'flex';
-                        item.style.alignItems = 'center';
-                        // item.style.gap = '5px'; REMOVED KINDLE
-                        item.style.border = '1px solid black';
-                        item.style.padding = '4px 8px';
-                        item.style.borderRadius = '15px';
-                        item.style.cursor = 'pointer';
-                        item.style.backgroundColor = 'white';
-                        item.style.fontSize = '0.85rem';
-                        item.style.marginRight = '10px';
-                        item.style.marginBottom = '10px';
-
-                        // Icon
-                        let iconSvg = ''; // Default?
-                        if (topic.icon) {
-                            // Check if it's an SVG string
-                            if (topic.icon.startsWith('<svg') || topic.icon.startsWith('<SVG')) {
-                                iconSvg = topic.icon;
-                            }
-                            // If it's a key like 'chat', we don't have access to TOPIC_ICONS here easily unless we copy them.
-                            // Let's just use a default star if no SVG string, for safety.
-                            else {
-                                iconSvg = '<svg viewBox="0 0 24 24" style="width:14px;height:14px;"><circle cx="12" cy="12" r="10" stroke="black" fill="none"/></svg>';
-                            }
-                        }
-
-                        // Extract SVG content and size it down
-                        // Using a small div wrapper
-                        const iconDiv = document.createElement('div');
-                        iconDiv.style.marginRight = '5px';
-                        iconDiv.style.width = '14px';
-                        iconDiv.style.height = '14px';
-                        // Validate SVG content to prevent XSS
-                        const safeIconSvg = (iconSvg && iconSvg.trim().startsWith('<svg')) ? iconSvg : '<svg viewBox="0 0 24 24" style="width:14px;height:14px;"><circle cx="12" cy="12" r="10" stroke="black" fill="none"/></svg>';
-                        iconDiv.innerHTML = safeIconSvg;
-                        // Ensure svg fits
-                        const svg = iconDiv.querySelector('svg');
-                        if (svg) {
-                            svg.setAttribute('width', '100%');
-                            svg.setAttribute('height', '100%');
-                            svg.style.fill = 'black';
-                        }
-
-                        const titleSpan = document.createElement('span');
-                        titleSpan.innerText = topic.title;
-
-                        item.appendChild(iconDiv);
-                        item.appendChild(titleSpan);
-
-                        item.onclick = () => {
-                            window.parent.postMessage({ type: 'open-app', app: 'topics', params: { id: tid } }, window.location.origin);
-                            // Fallback
-                            window.location.href = `topics?id=${encodeURIComponent(tid)}`;
-                        };
-
-                        list.appendChild(item);
-                    });
-                });
-            });
-        }
 
         async function renderInterestWithIcon(tag, container) {
             const pill = document.createElement('div');
@@ -2423,8 +2299,11 @@
 
             // Draw avatar after append
             setTimeout(() => {
-                const avatarSeed = user.customAvatar || user.avatarSeed || user.uid;
-                drawAvatar(avatarId, avatarSeed);
+                if (window.rekindleFetchAvatarSeed) {
+                    window.rekindleFetchAvatarSeed(db, user.uid, seed => drawAvatar(avatarId, seed));
+                } else {
+                    drawAvatar(avatarId, user.uid);
+                }
             }, 0);
         }
 
@@ -2453,10 +2332,19 @@
             document.getElementById('popup-view-travel').innerText = '';
 
             // Fetch user data
-            db.ref('users_public/' + uid).once('value').then(snap => {
-                if (snap.exists()) {
-                    const user = snap.val();
+            Promise.all([
+                db.ref('users_public/' + uid).once('value'),
+                db.ref('user_cards/' + uid).once('value')
+            ]).then(([publicSnap, cardSnap]) => {
+                if (publicSnap.exists()) {
+                    const user = publicSnap.val();
                     user.uid = uid;
+                    // Merge avatar data from user_cards if available
+                    const card = cardSnap.val();
+                    if (card) {
+                        if (card.avatarSeed !== undefined) user.avatarSeed = card.avatarSeed;
+                        if (card.customAvatar !== undefined) user.customAvatar = card.customAvatar;
+                    }
                     renderProfileInModal(user);
                 } else {
                     showAlertModal("User not found.");
@@ -2568,8 +2456,8 @@
             if (msgBtn) {
                 msgBtn.onclick = () => {
                     // Open KindleChat with this user's UID and name for faster loading
-                    const displayName = user.displayName || 'Anonymous';
-                    window.location.href = `kindlechat.html?chat_with_uid=${user.uid}&name=${encodeURIComponent(displayName)}`;
+                    const chatName = getKindleName(user);
+                    window.location.href = `kindlechat.html?chat_with_uid=${user.uid}&name=${encodeURIComponent(chatName)}`;
                 };
             }
         }
@@ -2861,107 +2749,44 @@
             recentPosts.forEach(post => renderPostItem(post, feed));
         }
 
-        async function renderPostItem(post, container, prepend = false) {
+        function renderPostItem(post, container, prepend = false) {
             const div = document.createElement('div');
+            div.className = 'post-card';
+            div.dataset.uid = post.uid;
+            div.style.position = 'relative';
 
-            // Fetch user info
-            let postUser = cachedUsers.find(u => u.uid === post.uid);
-            if (!postUser && currentUser && post.uid === currentUser.uid) {
-                postUser = myProfile;
-                if (postUser) postUser.uid = currentUser.uid;
-            }
-
-            let bubbleClass = '';
-            if (postUser) {
-                const isDev = (post.uid === 'ukiyo' || postUser.email === 'ukiyo@rekindle.ink' || postUser.displayName === 'ukiyo' || postUser.displayName === 'ukiyo@rekindle.ink') || (currentUser && post.uid === currentUser.uid && currentUser.email === 'ukiyo@rekindle.ink');
-                const isPro = postUser.kindlePlus || supporterUsers[postUser.displayName] || supporterUsers[postUser.email] || false;
-                if (isDev) bubbleClass = 'developer';
-                else if (isPro) bubbleClass = 'supporter';
-            }
-
-            div.className = 'post-card ' + bubbleClass;
-            div.dataset.uid = post.uid; // Add for re-render sync
-            div.style.position = 'relative'; // Ensure absolute children are positioned relative to this card
-
-            // Placeholder while loading user
+            // Placeholder while resolving user card
             div.innerHTML = `<div style="padding:10px;">Loading...</div>`;
-            container.appendChild(div);
-
-            if (!postUser) {
-                try {
-                    const snap = await db.ref('users_public/' + post.uid).once('value');
-                    postUser = snap.val();
-                    if (postUser) postUser.uid = post.uid;
-                } catch (e) {
-                    console.error(e);
-                    postUser = { displayName: 'Unknown', uid: post.uid };
-                }
+            if (prepend && container.firstChild) {
+                container.insertBefore(div, container.firstChild);
+            } else {
+                container.appendChild(div);
             }
 
-            if (!postUser) postUser = { displayName: 'Unknown', uid: post.uid };
-
-            // Determine styles again after async fetch if needed
-            if (bubbleClass === '') {
-                const isDev = (post.uid === 'ukiyo' || postUser.email === 'ukiyo@rekindle.ink' || postUser.displayName === 'ukiyo' || postUser.displayName === 'ukiyo@rekindle.ink') || (currentUser && post.uid === currentUser.uid && currentUser.email === 'ukiyo@rekindle.ink');
-                const isPro = postUser.kindlePlus || supporterUsers[postUser.displayName] || supporterUsers[postUser.email] || false;
-                if (isDev) bubbleClass = 'developer';
-                else if (isPro) bubbleClass = 'supporter';
-                div.className = 'post-card ' + bubbleClass;
-            }
-
-            const kName = getKindleName(postUser);
-            let dName = postUser.displayName;
-            if (!dName || dName === 'Unknown' || dName === 'Anonymous') {
-                dName = kName;
-            }
-
-            const avatarSeed = postUser.customAvatar || postUser.avatarSeed || post.uid;
+            // Compute translation and admin controls (user-independent)
             const date = new Date(post.timestamp);
             const timeStr = window.rekindleFormatTime ? window.rekindleFormatTime(date, { year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
             const avatarId = 'post-av-' + post.id;
 
-            let adminControls = '';
-            let modPostControls = '';
-            if (isAdminMode) {
-                adminControls = `
-                <div style="position:absolute; top:5px; right:5px; display:flex; z-index:10;">
-                    <button class="sys-btn" style="padding:2px 5px; font-size:0.7rem; margin-right:5px;" onclick="editPost('${escapeHtml(post.id)}')">Edit</button>
-                    <button class="sys-btn" style="padding:2px 5px; font-size:0.7rem; margin-right:5px; color:blue;" onclick="reprocessPost('${escapeHtml(post.id)}')" title="Reprocess Translation">Rp</button>
-                    <button class="sys-btn" style="padding:2px 5px; font-size:0.7rem; background:black; color:white;" onclick="deletePost('${escapeHtml(post.id)}')">Del</button>
-                </div>
-                `;
-            } else if (isModeratorMode) {
-                if (post.uid && (!currentUser || post.uid !== currentUser.uid)) {
-                    modPostControls += `<button style="background:black;color:white;border:none;padding:1px 6px;font-size:0.7rem;cursor:pointer;font-family:inherit;margin-left:5px;" onclick="timeOutUser('${escapeJs(post.uid)}', '${escapeJs(dName || 'this user')}')">Timeout</button>`;
-                }
-                modPostControls += `<button style="background:black;color:white;border:none;padding:1px 6px;font-size:0.7rem;cursor:pointer;font-family:inherit;margin-left:5px;" onclick="deletePost('${escapeHtml(post.id)}')">Delete</button>`;
-            }
-
             let displayText = post.text;
             let isTranslatedDisplay = false;
             let toggleBtnHtml = '';
-
-            // Translation Logic
-            var hasTranslation = false;
             var translationText = "";
-            var originalTextLowercase = (post.text || "").toLowerCase().trim();
 
             if (post.translation) {
+                var originalTextLowercase = (post.text || "").toLowerCase().trim();
                 if (typeof post.translation === 'string') {
-                    // Legacy string format
                     if (originalTextLowercase !== post.translation.toLowerCase().trim()) {
-                        hasTranslation = true;
+                        isTranslatedDisplay = true;
                         translationText = post.translation;
                     }
                 } else if (typeof post.translation === 'object') {
-                    // New map format
                     var langToTry = (typeof userLang !== 'undefined') ? userLang : 'en';
                     if (post.translation[langToTry] && post.translation[langToTry].toLowerCase().trim() !== originalTextLowercase) {
-                        hasTranslation = true;
+                        isTranslatedDisplay = true;
                         translationText = post.translation[langToTry];
                     } else if (langToTry !== 'en' && post.translation['en'] && post.translation['en'].toLowerCase().trim() !== originalTextLowercase) {
-                        // Fallback to English if user language translation is missing or identical, but English translation is different
-                        hasTranslation = true;
+                        isTranslatedDisplay = true;
                         translationText = post.translation['en'];
                     }
                 }
@@ -2971,9 +2796,8 @@
                 translationText = window.filterBadWords(translationText);
             }
 
-            if (hasTranslation) {
+            if (isTranslatedDisplay) {
                 displayText = translationText;
-                isTranslatedDisplay = true;
                 const trLabel = window.t ? window.t('kindlechat.msg.show_original', 'Show Original') : 'Show Original';
                 toggleBtnHtml = `<div style="margin-top: 5px;"><span id="toggle-${escapeHtml(post.id)}" onclick="toggleTranslation('${escapeHtml(post.id)}')" style="font-size:0.7rem; color:#666; text-decoration:underline; cursor:pointer;">${trLabel}</span></div>`;
             }
@@ -2982,62 +2806,84 @@
                 displayText = window.filterBadWords(displayText);
             }
 
-            let nameBadge = '';
-            if (bubbleClass === 'developer') {
-                nameBadge = '<span class="dev-tag">DEV</span>';
-            } else if (bubbleClass === 'supporter') {
-                nameBadge = '<svg class="supporter-crown" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M2 4L5 18H19L22 4L15 11L12 4L9 11L2 4Z" stroke="currentColor" stroke-width="2" fill="none"/></svg>';
-            }
+            // Resolve user card and build full HTML
+            window.rekindleFetchUserCard(db, post.uid, function (card) {
+                const username = (card && card.username) ? card.username : (post.uid ? post.uid.substring(0, 8) : 'Unknown');
+                const isDev = (username === 'ukiyo');
+                const isPro = supporterUsers[username] || false;
 
-            const handleHtml = (dName === kName) ? '' : `<span class="user-handle">@${escapeHtml(kName)}</span>`;
+                if (isDev) div.classList.add('developer');
+                else if (isPro) div.classList.add('supporter');
 
-            div.innerHTML = `
-                ${adminControls}
-                <div style="display:flex; align-items:flex-start;">
-                    <canvas id="${avatarId}" class="avatar-canvas" width="48" height="48" style="width:48px; height:48px; border:2px solid black; image-rendering:pixelated; flex-shrink:0; cursor:pointer; margin-right:10px;"></canvas>
-                    <div style="flex:1; min-width:0;">
-                         <div style="display:flex; justify-content:space-between; align-items:center; min-width:0;">
-                            <div class="post-name-row" onclick="openUserProfile('${escapeHtml(post.uid)}')">
-                                ${nameBadge ? `<span style="margin-right:4px; display:flex; align-items:center; flex-shrink:0;">${nameBadge}</span>` : ''}
-                                <strong style="font-size:0.95rem; margin-right:4px;">${escapeHtml(dName)}</strong>
-                                ${handleHtml}
-                            </div>
-                            <div style="display:flex; align-items:center; flex-shrink:0; margin-left:5px; margin-right:${isAdminMode ? '100px' : '0'};">
-                                <small style="color:#666; font-size:0.75rem; white-space:nowrap;">${timeStr}</small>
-                                ${modPostControls}
-                            </div>
-                         </div>
-                         <div id="post-text-${post.id}" data-state="${isTranslatedDisplay ? 'translated' : 'original'}" data-original="${escapeHtml(post.text)}" data-translated="${escapeHtml(translationText || '')}" style="white-space:pre-wrap; font-size:0.9rem; line-height:1.4; margin-top:5px; ${isTranslatedDisplay ? 'font-style:italic;' : ''}">${escapeHtml(displayText)}</div>
-                         ${toggleBtnHtml}
+                let adminControls = '';
+                let modPostControls = '';
+                if (isAdminMode) {
+                    adminControls = `
+                    <div style="position:absolute; top:5px; right:5px; display:flex; z-index:10;">
+                        <button class="sys-btn" style="padding:2px 5px; font-size:0.7rem; margin-right:5px;" onclick="editPost('${escapeHtml(post.id)}')">Edit</button>
+                        <button class="sys-btn" style="padding:2px 5px; font-size:0.7rem; margin-right:5px; color:blue;" onclick="reprocessPost('${escapeHtml(post.id)}')" title="Reprocess Translation">Rp</button>
+                        <button class="sys-btn" style="padding:2px 5px; font-size:0.7rem; background:black; color:white;" onclick="deletePost('${escapeHtml(post.id)}')">Del</button>
                     </div>
-                </div>
-                <!-- COMMENTS SECTION -->
-                <div class="comments-section">
-                    <span class="comments-toggle" onclick="toggleComments('${post.id}', this)">
-                        <svg viewBox="0 0 24 24" width="16" height="16" style="vertical-align: middle; margin-right: 2px; display: inline-block;"><rect x="3" y="3" width="18" height="14" stroke="currentColor" stroke-width="2" fill="none"/><path d="M7 17v4l4-4" stroke="currentColor" stroke-width="2" fill="none"/></svg>
-                        <span class="toggle-text">${openCommentsPosts.has(post.id) ? 'Hide Comments' : 'Comments'}</span><span id="comments-count-${post.id}"></span>
-                    </span>
-                    <div id="comments-area-${post.id}" style="display:${openCommentsPosts.has(post.id) ? 'block' : 'none'};">
-                        <div id="comments-list-${post.id}" class="comments-list"></div>
-                        <div class="comment-input-row">
-                            <input type="text" id="comment-input-${post.id}" placeholder="Add a comment..." maxlength="200">
-                            <button class="sys-btn" onclick="submitComment('${post.id}')">Add</button>
+                    `;
+                } else if (isModeratorMode) {
+                    if (post.uid && (!currentUser || post.uid !== currentUser.uid)) {
+                        modPostControls += `<button style="background:black;color:white;border:none;padding:1px 6px;font-size:0.7rem;cursor:pointer;font-family:inherit;margin-left:5px;" onclick="timeOutUser('${escapeJs(post.uid)}', '${escapeJs(username || 'this user')}')">Timeout</button>`;
+                    }
+                    modPostControls += `<button style="background:black;color:white;border:none;padding:1px 6px;font-size:0.7rem;cursor:pointer;font-family:inherit;margin-left:5px;" onclick="deletePost('${escapeHtml(post.id)}')">Delete</button>`;
+                }
+
+                let nameBadge = '';
+                if (isDev) {
+                    nameBadge = '<span class="dev-tag">DEV</span>';
+                } else if (isPro) {
+                    nameBadge = '<svg class="supporter-crown" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M2 4L5 18H19L22 4L15 11L12 4L9 11L2 4Z" stroke="currentColor" stroke-width="2" fill="none"/></svg>';
+                }
+
+                div.innerHTML = `
+                    ${adminControls}
+                    <div style="display:flex; align-items:flex-start;">
+                        <canvas id="${avatarId}" class="avatar-canvas" width="48" height="48" style="width:48px; height:48px; border:2px solid black; image-rendering:pixelated; flex-shrink:0; cursor:pointer; margin-right:10px;"></canvas>
+                        <div style="flex:1; min-width:0;">
+                             <div style="display:flex; justify-content:space-between; align-items:center; min-width:0;">
+                                <div class="post-name-row" onclick="openUserProfile('${escapeHtml(post.uid)}')">
+                                    ${nameBadge ? `<span style="margin-right:4px; display:flex; align-items:center; flex-shrink:0;">${nameBadge}</span>` : ''}
+                                    <strong style="font-size:0.95rem; margin-right:4px;">${escapeHtml(username)}</strong>
+                                </div>
+                                <div style="display:flex; align-items:center; flex-shrink:0; margin-left:5px; margin-right:${isAdminMode ? '100px' : '0'};">
+                                    <small style="color:#666; font-size:0.75rem; white-space:nowrap;">${timeStr}</small>
+                                    ${modPostControls}
+                                </div>
+                             </div>
+                             <div id="post-text-${post.id}" data-state="${isTranslatedDisplay ? 'translated' : 'original'}" data-original="${escapeHtml(post.text)}" data-translated="${escapeHtml(translationText || '')}" style="white-space:pre-wrap; font-size:0.9rem; line-height:1.4; margin-top:5px; ${isTranslatedDisplay ? 'font-style:italic;' : ''}">${escapeHtml(displayText)}</div>
+                             ${toggleBtnHtml}
                         </div>
                     </div>
-                </div>
-            `;
+                    <!-- COMMENTS SECTION -->
+                    <div class="comments-section">
+                        <span class="comments-toggle" onclick="toggleComments('${post.id}', this)">
+                            <svg viewBox="0 0 24 24" width="16" height="16" style="vertical-align: middle; margin-right: 2px; display: inline-block;"><rect x="3" y="3" width="18" height="14" stroke="currentColor" stroke-width="2" fill="none"/><path d="M7 17v4l4-4" stroke="currentColor" stroke-width="2" fill="none"/></svg>
+                            <span class="toggle-text">${openCommentsPosts.has(post.id) ? 'Hide Comments' : 'Comments'}</span><span id="comments-count-${post.id}"></span>
+                        </span>
+                        <div id="comments-area-${post.id}" style="display:${openCommentsPosts.has(post.id) ? 'block' : 'none'};">
+                            <div id="comments-list-${post.id}" class="comments-list"></div>
+                            <div class="comment-input-row">
+                                <input type="text" id="comment-input-${post.id}" placeholder="Add a comment..." maxlength="200">
+                                <button class="sys-btn" onclick="submitComment('${post.id}')">Add</button>
+                            </div>
+                        </div>
+                    </div>
+                `;
 
-            // Draw Avatar
-            setTimeout(() => {
-                drawAvatar(avatarId, avatarSeed);
-                // click avatar to profile
+                // Draw Avatar
+                const seed = (card && (card.customAvatar || card.avatarSeed)) ? (card.customAvatar || card.avatarSeed) : post.uid;
+                drawAvatar(avatarId, seed);
                 const cvs = document.getElementById(avatarId);
                 if (cvs) cvs.onclick = () => openUserProfile(post.uid);
-            }, 0);
 
-            // Load comments for this post
-            const commentsContainer = div.querySelector(`#comments-list-${post.id}`);
-            loadComments(post.id, commentsContainer);
+                // Load comments for this post
+                const commentsContainer = div.querySelector(`#comments-list-${post.id}`);
+                if (commentsContainer) loadComments(post.id, commentsContainer);
+            });
         }
 
         // --- COMMENTS ---
@@ -3086,34 +2932,13 @@
 
                 // Render each comment
                 for (const comment of comments) {
-                    await renderComment(comment, postId, listContainer);
+                    renderComment(comment, postId, listContainer);
                 }
             });
             commentListeners.set(postId, { ref: commentsRef, fn: commentFn });
         }
 
-        async function renderComment(comment, postId, container) {
-            // Fetch user info
-            let commUser = cachedUsers.find(u => u.uid === comment.uid);
-            if (!commUser && currentUser && comment.uid === currentUser.uid) {
-                commUser = myProfile;
-            }
-            if (!commUser) {
-                try {
-                    const snap = await db.ref('users_public/' + comment.uid).once('value');
-                    commUser = snap.val();
-                } catch (e) {
-                    commUser = { displayName: 'Unknown' };
-                }
-            }
-            if (!commUser) commUser = { displayName: 'Unknown', uid: comment.uid };
-
-            let kindleName = getKindleName(commUser);
-            let displayName = commUser.displayName;
-            if (!displayName || displayName === 'Unknown' || displayName === 'Anonymous') {
-                displayName = kindleName;
-            }
-
+        function renderComment(comment, postId, container) {
             const date = new Date(comment.timestamp);
             const timeStr = window.rekindleFormatTime ? window.rekindleFormatTime(date, { year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
@@ -3123,58 +2948,56 @@
                 displayText = window.filterBadWords(displayText);
             }
 
-            let isDev = (comment.uid === 'ukiyo' || commUser.email === 'ukiyo@rekindle.ink' || commUser.displayName === 'ukiyo' || commUser.displayName === 'ukiyo@rekindle.ink');
-            if (!isDev && currentUser && comment.uid === currentUser.uid && currentUser.email === 'ukiyo@rekindle.ink') isDev = true;
-
-            const isPro = commUser.kindlePlus || supporterUsers[displayName] || supporterUsers[commUser.email] || false;
-
-            let nameBadge = '';
-            let bubbleClass = '';
-
-            if (isDev) {
-                nameBadge = '<span class="dev-tag">DEV</span>';
-                bubbleClass = 'developer';
-            } else if (isPro) {
-                const crownSvg = '<svg class="supporter-crown" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M2 4L5 18H19L22 4L15 11L12 4L9 11L2 4Z" stroke="currentColor" stroke-width="2" fill="none"/></svg>';
-                nameBadge = crownSvg;
-                bubbleClass = 'supporter';
-            }
-
-            // Admin/mod delete button
-            let adminDelBtn = '';
-            let modCommentControls = '';
-            if (isAdminMode) {
-                adminDelBtn = `<div style="position:absolute; right:3px; top:3px; display:flex;">
-                    <button class="sys-btn" style="padding:1px 4px; font-size:0.6rem; background:black; color:white;" onclick="deleteComment('${escapeHtml(postId)}', '${escapeHtml(comment.id)}')">Del</button>
-                </div>`;
-            } else if (isModeratorMode) {
-                if (comment.uid && (!currentUser || comment.uid !== currentUser.uid)) {
-                    modCommentControls += `<button style="background:black;color:white;border:none;padding:1px 5px;font-size:0.65rem;cursor:pointer;font-family:inherit;margin-left:4px;" onclick="timeOutUser('${escapeJs(comment.uid)}', '${escapeJs(displayName || 'this user')}')">Timeout</button>`;
-                }
-                modCommentControls += `<button style="background:black;color:white;border:none;padding:1px 5px;font-size:0.65rem;cursor:pointer;font-family:inherit;margin-left:4px;" onclick="deleteComment('${escapeHtml(postId)}', '${escapeHtml(comment.id)}')">Delete</button>`;
-            }
-
             const commentDiv = document.createElement('div');
-            commentDiv.className = 'comment-item ' + bubbleClass;
-            commentDiv.dataset.uid = comment.uid; // Add for re-render sync
+            commentDiv.className = 'comment-item';
+            commentDiv.dataset.uid = comment.uid;
             commentDiv.style.position = 'relative';
-
-            const handleHtml = (displayName === kindleName) ? '' : `<span class="user-handle" style="margin-left:5px;">@${escapeHtml(kindleName)}</span>`;
-
-            commentDiv.innerHTML = `
-                ${adminDelBtn}
-                <div style="display:flex; align-items:center; min-width:0;">
-                    <div class="comment-name-row" onclick="openUserProfile('${escapeHtml(comment.uid)}')">
-                        ${nameBadge ? '<span style="margin-right:3px; display:inline-flex; align-items:center; flex-shrink:0;">' + nameBadge + '</span>' : ''}
-                        <strong style="font-size:0.85rem;">${escapeHtml(displayName)}</strong>
-                        ${handleHtml}
-                    </div>
-                    <small style="color:#666; font-size:0.7rem; white-space:nowrap; flex-shrink:0; margin-left:5px;">${timeStr}</small>
-                    ${modCommentControls}
-                </div>
-                <div style="margin-top:2px; font-size:0.85rem; line-height:1.3;">${escapeHtml(displayText)}</div>
-            `;
             container.appendChild(commentDiv);
+
+            // Resolve user card and build HTML
+            window.rekindleFetchUserCard(db, comment.uid, function (card) {
+                const username = (card && card.username) ? card.username : (comment.uid ? comment.uid.substring(0, 8) : 'Unknown');
+                const isDev = (username === 'ukiyo');
+                if (!isDev && currentUser && comment.uid === currentUser.uid && currentUser.email === 'ukiyo@rekindle.ink') isDev = true;
+                const isPro = supporterUsers[username] || false;
+
+                if (isDev) commentDiv.classList.add('developer');
+                else if (isPro) commentDiv.classList.add('supporter');
+
+                let nameBadge = '';
+                if (isDev) {
+                    nameBadge = '<span class="dev-tag">DEV</span>';
+                } else if (isPro) {
+                    const crownSvg = '<svg class="supporter-crown" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M2 4L5 18H19L22 4L15 11L12 4L9 11L2 4Z" stroke="currentColor" stroke-width="2" fill="none"/></svg>';
+                    nameBadge = crownSvg;
+                }
+
+                let adminDelBtn = '';
+                let modCommentControls = '';
+                if (isAdminMode) {
+                    adminDelBtn = `<div style="position:absolute; right:3px; top:3px; display:flex;">
+                        <button class="sys-btn" style="padding:1px 4px; font-size:0.6rem; background:black; color:white;" onclick="deleteComment('${escapeHtml(postId)}', '${escapeHtml(comment.id)}')">Del</button>
+                    </div>`;
+                } else if (isModeratorMode) {
+                    if (comment.uid && (!currentUser || comment.uid !== currentUser.uid)) {
+                        modCommentControls += `<button style="background:black;color:white;border:none;padding:1px 5px;font-size:0.65rem;cursor:pointer;font-family:inherit;margin-left:4px;" onclick="timeOutUser('${escapeJs(comment.uid)}', '${escapeJs(username || 'this user')}')">Timeout</button>`;
+                    }
+                    modCommentControls += `<button style="background:black;color:white;border:none;padding:1px 5px;font-size:0.65rem;cursor:pointer;font-family:inherit;margin-left:4px;" onclick="deleteComment('${escapeHtml(postId)}', '${escapeHtml(comment.id)}')">Delete</button>`;
+                }
+
+                commentDiv.innerHTML = `
+                    ${adminDelBtn}
+                    <div style="display:flex; align-items:center; min-width:0;">
+                        <div class="comment-name-row" onclick="openUserProfile('${escapeHtml(comment.uid)}')">
+                            ${nameBadge ? '<span style="margin-right:3px; display:inline-flex; align-items:center; flex-shrink:0;">' + nameBadge + '</span>' : ''}
+                            <strong style="font-size:0.85rem;">${escapeHtml(username)}</strong>
+                        </div>
+                        <small style="color:#666; font-size:0.7rem; white-space:nowrap; flex-shrink:0; margin-left:5px;">${timeStr}</small>
+                        ${modCommentControls}
+                    </div>
+                    <div style="margin-top:2px; font-size:0.85rem; line-height:1.3;">${escapeHtml(displayText)}</div>
+                `;
+            });
         }
 
         function submitComment(postId) {
@@ -3183,7 +3006,7 @@
                 showAlertModal("You are temporarily restricted from posting.");
                 return;
             }
-            if (!myProfile || !myProfile.displayName || myProfile.displayName === 'Anonymous') { showPublicProfileModal(); return; }
+            if (!myProfile) { showPublicProfileModal(); return; }
 
             const input = document.getElementById('comment-input-' + postId);
             const text = input.value.trim();
@@ -3281,7 +3104,7 @@
                         updates['mod_actions/' + logKey] = {
                             type: 'delete_neighbourhood_comment',
                             moderatorUid: currentUser.uid,
-                            moderatorName: (myProfile && myProfile.displayName) || currentUser.uid,
+                            moderatorName: getKindleName(myProfile) || currentUser.uid,
                             targetUid: commentData.uid || '',
                             targetName: commentData.uid || '',
                             reason: reason || '',
@@ -3332,8 +3155,8 @@
                 return;
             }
 
-            // CHECK 0: Public Profile with proper name
-            if (!myProfile || !myProfile.displayName || myProfile.displayName === 'Anonymous') {
+            // CHECK 0: Public Profile exists
+            if (!myProfile) {
                 showPublicProfileModal();
                 return;
             }
@@ -3363,7 +3186,7 @@
             const btn = document.querySelector('button[onclick="submitPost()"]');
             if (btn) btn.disabled = true;
 
-            const isPro = currentUser.kindlePlus || supporterUsers[currentUser.email] || supporterUsers[currentUser.displayName] || false;
+            const isPro = currentUser.kindlePlus || supporterUsers[currentUser.email] || false;
 
             if (typeof TRANSLATION_WORKER_URL !== 'undefined' && TRANSLATION_WORKER_URL) {
                 currentUser.getIdToken().then(function (token) {
@@ -3535,7 +3358,7 @@
                         updates['mod_actions/' + logKey] = {
                             type: 'delete_neighbourhood_post',
                             moderatorUid: currentUser.uid,
-                            moderatorName: (myProfile && myProfile.displayName) || currentUser.uid,
+                            moderatorName: getKindleName(myProfile) || currentUser.uid,
                             targetUid: postData.uid || '',
                             targetName: postData.uid || '',
                             reason: reason || '',

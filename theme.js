@@ -706,17 +706,49 @@
         }
         if (!db) { callback(uid); return; }
         
-        db.ref('users_public/' + uid).once('value').then(function(snap) {
+        db.ref('user_cards/' + uid).once('value').then(function(snap) {
             var seed = uid;
             if (snap.exists()) {
-                var profile = snap.val();
-                seed = profile.customAvatar || profile.avatarSeed || uid;
+                var card = snap.val();
+                seed = card.customAvatar || card.avatarSeed || uid;
             }
             window.rekindleAvatarCache[uid] = seed;
             callback(seed);
         }).catch(function() {
             callback(uid);
         });
+    };
+
+    // --- USER CARD CACHING HELPER ---
+    window.rekindleCardCache = {};
+    var _pendingCardFetches = {};
+    window.rekindleFetchUserCard = function(db, uid, callback) {
+        if (!uid || !db) { callback(null); return; }
+        if (window.rekindleCardCache[uid]) {
+            callback(window.rekindleCardCache[uid]);
+            return;
+        }
+        if (_pendingCardFetches[uid]) {
+            _pendingCardFetches[uid].push(callback);
+            return;
+        }
+        _pendingCardFetches[uid] = [callback];
+        db.ref('user_cards/' + uid).once('value').then(function(snap) {
+            var card = snap.exists() ? snap.val() : null;
+            window.rekindleCardCache[uid] = card;
+            var cbs = _pendingCardFetches[uid];
+            delete _pendingCardFetches[uid];
+            cbs.forEach(function(cb) { cb(card); });
+        }).catch(function() {
+            var cbs = _pendingCardFetches[uid];
+            delete _pendingCardFetches[uid];
+            cbs.forEach(function(cb) { cb(null); });
+        });
+    };
+    window.rekindleInvalidateUserCard = function(uid) {
+        if (uid) {
+            delete window.rekindleCardCache[uid];
+        }
     };
 
 })();

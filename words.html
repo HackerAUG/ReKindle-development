@@ -841,7 +841,7 @@
             try {
                 await db.collection('rooms').doc('general').collection('messages').add({
                     text: `words:${newGameId}`, // Custom format: <game>:<gameId>
-                    user: escapeHTML(currentUsername), // CRITICAL: Sanitize username
+                    uid: currentUser.uid,
                     timestamp: firebase.firestore.FieldValue.serverTimestamp(),
                     is_game_link: true
                 });

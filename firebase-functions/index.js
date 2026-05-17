@@ -484,12 +484,19 @@ exports.registerUser = onCall(callOptions, async (request) => {
         }
 
         // Create public profile so moderation search can find the user immediately
+        const avatarSeed = Math.floor(Math.random() * 10000);
         await admin.database().ref(`users_public/${userRecord.uid}`).set({
-            displayName: username,
             username: username,
             email: email,
+            avatarSeed: avatarSeed,
             createdAt: admin.database.ServerValue.TIMESTAMP,
             lastActive: admin.database.ServerValue.TIMESTAMP
+        });
+        // Also create user_cards mirror for fast avatar lookups
+        await admin.database().ref(`user_cards/${userRecord.uid}`).set({
+            username: username,
+            avatarSeed: avatarSeed,
+            customAvatar: null
         });
 
         // Return a custom token so the client can call signInWithCustomToken()
@@ -655,7 +662,6 @@ exports.postGeneralChatMessage = onCall(callOptions, async (request) => {
     // Build message payload (whitelist known fields)
     const { text = '', ...clientExtras } = request.data;
     const messageData = {
-        user: username,
         uid: uid,
         timestamp: admin.database.ServerValue.TIMESTAMP,
         text: String(text).substring(0, 1000)

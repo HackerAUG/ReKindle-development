@@ -1061,7 +1061,6 @@
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
-    <script src="js/rtdb-tracker.js?v=1"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-functions-compat.js"></script>
     <script src="emojis.js?v=2"></script>
 
@@ -1079,11 +1078,15 @@
         <div class="title-bar">
             <div class="title-stripes"></div>
             <div class="close-box" onclick="window.location.href='index'">X</div>
-            <button class="sys-btn" onclick="markAllAsRead()" style="position:absolute; left: 45px; z-index:2; height: 18px; line-height:1; font-size:0.7rem; padding: 0 5px;" data-i18n="kindlechat.btn.mark_read" title="Mark All As Read">Mark Read</button>
+            <button class="sys-btn" onclick="markAllAsRead()"
+                style="position:absolute; left: 45px; z-index:2; height: 18px; line-height:1; font-size:0.7rem; padding: 0 5px;"
+                data-i18n="kindlechat.btn.mark_read" title="Mark All As Read">Mark Read</button>
             <span class="title-text" data-i18n="kindlechat.title">KindleChat</span>
             <div class="title-controls">
-                <label id="mod-toggle-label" style="display:none; font-size:0.75rem; cursor:pointer; background:white; border:2px solid black; padding:2px 5px; font-weight:bold; margin-right:5px; align-items:center;">
-                    <input type="checkbox" id="mod-mode-check" onchange="toggleModeratorMode(this.checked)" style="margin-right:4px;">
+                <label id="mod-toggle-label"
+                    style="display:none; font-size:0.75rem; cursor:pointer; background:white; border:2px solid black; padding:2px 5px; font-weight:bold; margin-right:5px; align-items:center;">
+                    <input type="checkbox" id="mod-mode-check" onchange="toggleModeratorMode(this.checked)"
+                        style="margin-right:4px;">
                     Mod Mode
                 </label>
                 <button class="sys-btn" onclick="openRulesModal()"
@@ -1425,7 +1428,7 @@
         function loadRoomStates() {
             if (!currentUser) return Promise.resolve();
             return rtdb.ref('users_private/' + currentUser.uid + '/chat_states').once('value')
-                .then(function(snap) {
+                .then(function (snap) {
                     userRoomStates = snap.val() || {};
                     roomStatesLoaded = true;
                     if (userRooms.length > 0) updateSidebar();
@@ -1443,9 +1446,9 @@
                 var generalTs = generalRoom.lastMessageAt;
                 if (generalTs && generalTs.toMillis) generalTs = generalTs.toMillis();
                 else if (generalTs && generalTs.seconds) generalTs = generalTs.seconds * 1000;
-                
+
                 var currentGeneralLastRead = (userRoomStates['general'] && typeof userRoomStates['general'].lastReadTime === 'number') ? userRoomStates['general'].lastReadTime : 0;
-                
+
                 if (generalTs > currentGeneralLastRead) {
                     if (!userRoomStates['general']) userRoomStates['general'] = {};
                     userRoomStates['general'].lastReadTime = generalTs;
@@ -1455,16 +1458,16 @@
             }
 
             // Check DMs/Other Rooms
-            userRooms.forEach(function(r) {
+            userRooms.forEach(function (r) {
                 var currentTs = r.lastMessageAt;
                 if (currentTs && currentTs.toMillis) currentTs = currentTs.toMillis();
                 else if (currentTs && currentTs.seconds) currentTs = currentTs.seconds * 1000;
-                
+
                 var lastRead = 0;
                 if (userRoomStates[r.id] && userRoomStates[r.id].lastReadTime) {
                     lastRead = userRoomStates[r.id].lastReadTime;
                 }
-                
+
                 if (currentTs > lastRead) {
                     if (!userRoomStates[r.id]) userRoomStates[r.id] = {};
                     userRoomStates[r.id].lastReadTime = currentTs;
@@ -1474,9 +1477,9 @@
             });
 
             if (hasUpdates) {
-                rtdb.ref('users_private/' + currentUser.uid + '/chat_states').update(updates).then(function() {
+                rtdb.ref('users_private/' + currentUser.uid + '/chat_states').update(updates).then(function () {
                     updateSidebar();
-                }).catch(function(error) {
+                }).catch(function (error) {
                     console.error("Error updating all chats read states:", error);
                     updateSidebar(); // update local anyways
                 });
@@ -1552,115 +1555,115 @@
             auth.onAuthStateChanged(function (user) {
                 if (user) {
                     checkSocialTimeout(rtdb, user.uid, function () {
-                    currentUser = user;
-                    currentUsername = (user.email || user.uid).split('@')[0];
+                        currentUser = user;
+                        currentUsername = (user.email || user.uid).split('@')[0];
 
-                    // Check moderator status
-                    rtdb.ref('moderators/' + user.uid).once('value').then(function(modSnap) {
-                        isCurrentUserMod = modSnap.val() === true;
-                        if (isCurrentUserMod) {
-                            var toggler = document.getElementById('mod-toggle-label');
-                            if (toggler) toggler.style.display = 'flex';
-                        }
-                    });
-
-                    // Check Rules Acceptance
-                    if (rulesListenerRef) rulesListenerRef.off();
-                    rulesListenerRef = rtdb.ref('users_private/' + user.uid + '/accepted_rules/kindlechat');
-                    rulesListenerRef.on('value', function (snap) {
-                        currentUserRulesVersion = snap.val() || 0;
-                    });
-
-                    // Check Pro Status (shared with other apps)
-                    isPro = (localStorage.getItem('rekindle_is_pro') !== 'false');
-                    const cachedExpiry = localStorage.getItem('rekindle_pro_expiry');
-                    if (cachedExpiry && parseInt(cachedExpiry) > Date.now()) {
-                        isPro = true;
-                    }
-
-                    document.getElementById('active-input').style.display = 'flex';
-                    document.getElementById('locked-input').style.display = 'none';
-
-                    // Run cleanup in background (non-blocking)
-                    cleanupEmptyChats();
-
-                    // Username/avatar cache is populated lazily as messages render
-                    // via rekindleFetchUserCard (reads tiny /user_cards records).
-
-                    // Wait for supporters to load BEFORE loading messages to avoid race condition on Pro styling
-                    fetchSupporters().then(function () {
-                        loadMessages();
-                    })['catch'](function (err) {
-                        console.warn("Continuing without supporters:", err);
-                        loadMessages();
-                    });
-
-                    loadRoomStates().then(function() {
-                        loadRooms();
-                    });
-
-                    // DEEP LINK: Open DM if requested
-                    var params = new URLSearchParams(window.location.search);
-                    var chatWithUid = params.get('chat_with_uid');
-                    var chatWithName = params.get('name') || params.get('chat_with');
-
-                    if (chatWithUid && chatWithUid !== currentUser.uid) {
-                        // OPTIMIZED: Try O(1) fetch with deterministic Room ID
-                        var uids = [currentUser.uid, chatWithUid].sort();
-                        var roomId = "dm_" + uids[0] + "_" + uids[1];
-
-                        db.collection('rooms').doc(roomId).get().then(function (doc) {
-                            if (doc.exists) {
-                                switchRoom(roomId, chatWithName || "Chat");
-                                window.history.replaceState({}, document.title, window.location.pathname);
-                            } else {
-                                // Fallback: Check if old-style DM exists by name
-                                handleLegacyDeepLink(chatWithName, chatWithUid);
+                        // Check moderator status
+                        rtdb.ref('moderators/' + user.uid).once('value').then(function (modSnap) {
+                            isCurrentUserMod = modSnap.val() === true;
+                            if (isCurrentUserMod) {
+                                var toggler = document.getElementById('mod-toggle-label');
+                                if (toggler) toggler.style.display = 'flex';
                             }
-                        })['catch'](function (err) {
-                            console.error("Error fetching room:", err);
-                            handleLegacyDeepLink(chatWithName, chatWithUid);
                         });
-                    } else if (chatWithName && chatWithName !== currentUsername) {
-                        handleLegacyDeepLink(chatWithName, null);
-                    }
 
-                    function handleLegacyDeepLink(targetName, targetUid) {
-                        if (!targetName) return;
-                        db.collection('rooms')
-                            .where('participants', 'array-contains', currentUsername)
-                            .where('type', '==', 'dm')
-                            .get()
-                            .then(function (snapshot) {
-                                var foundRoomId = null;
-                                snapshot.forEach(function (doc) {
-                                    var data = doc.data();
-                                    if (data.participants.includes(targetName)) {
-                                        foundRoomId = doc.id;
-                                    }
-                                });
+                        // Check Rules Acceptance
+                        if (rulesListenerRef) rulesListenerRef.off();
+                        rulesListenerRef = rtdb.ref('users_private/' + user.uid + '/accepted_rules/kindlechat');
+                        rulesListenerRef.on('value', function (snap) {
+                            currentUserRulesVersion = snap.val() || 0;
+                        });
 
-                                if (foundRoomId) {
-                                    switchRoom(foundRoomId, targetName);
-                                } else if (targetUid) {
-                                    // NO existing room found: Create new DM with deterministic ID
-                                    var uids = [currentUser.uid, targetUid].sort();
-                                    var newRoomId = "dm_" + uids[0] + "_" + uids[1];
-                                    db.collection('rooms').doc(newRoomId).set({
-                                        type: 'dm',
-                                        participants: [currentUsername, targetName],
-                                        participantUids: [currentUser.uid, targetUid],
-                                        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-                                        lastMessageAt: firebase.firestore.FieldValue.serverTimestamp()
-                                    }).then(function () {
-                                        switchRoom(newRoomId, targetName);
-                                    });
+                        // Check Pro Status (shared with other apps)
+                        isPro = (localStorage.getItem('rekindle_is_pro') !== 'false');
+                        const cachedExpiry = localStorage.getItem('rekindle_pro_expiry');
+                        if (cachedExpiry && parseInt(cachedExpiry) > Date.now()) {
+                            isPro = true;
+                        }
+
+                        document.getElementById('active-input').style.display = 'flex';
+                        document.getElementById('locked-input').style.display = 'none';
+
+                        // Run cleanup in background (non-blocking)
+                        cleanupEmptyChats();
+
+                        // Username/avatar cache is populated lazily as messages render
+                        // via rekindleFetchUserCard (reads tiny /user_cards records).
+
+                        // Wait for supporters to load BEFORE loading messages to avoid race condition on Pro styling
+                        fetchSupporters().then(function () {
+                            loadMessages();
+                        })['catch'](function (err) {
+                            console.warn("Continuing without supporters:", err);
+                            loadMessages();
+                        });
+
+                        loadRoomStates().then(function () {
+                            loadRooms();
+                        });
+
+                        // DEEP LINK: Open DM if requested
+                        var params = new URLSearchParams(window.location.search);
+                        var chatWithUid = params.get('chat_with_uid');
+                        var chatWithName = params.get('name') || params.get('chat_with');
+
+                        if (chatWithUid && chatWithUid !== currentUser.uid) {
+                            // OPTIMIZED: Try O(1) fetch with deterministic Room ID
+                            var uids = [currentUser.uid, chatWithUid].sort();
+                            var roomId = "dm_" + uids[0] + "_" + uids[1];
+
+                            db.collection('rooms').doc(roomId).get().then(function (doc) {
+                                if (doc.exists) {
+                                    switchRoom(roomId, chatWithName || "Chat");
+                                    window.history.replaceState({}, document.title, window.location.pathname);
+                                } else {
+                                    // Fallback: Check if old-style DM exists by name
+                                    handleLegacyDeepLink(chatWithName, chatWithUid);
                                 }
-                                window.history.replaceState({}, document.title, window.location.pathname);
                             })['catch'](function (err) {
-                                console.error("Legacy deep link error:", err);
+                                console.error("Error fetching room:", err);
+                                handleLegacyDeepLink(chatWithName, chatWithUid);
                             });
-                    }
+                        } else if (chatWithName && chatWithName !== currentUsername) {
+                            handleLegacyDeepLink(chatWithName, null);
+                        }
+
+                        function handleLegacyDeepLink(targetName, targetUid) {
+                            if (!targetName) return;
+                            db.collection('rooms')
+                                .where('participants', 'array-contains', currentUsername)
+                                .where('type', '==', 'dm')
+                                .get()
+                                .then(function (snapshot) {
+                                    var foundRoomId = null;
+                                    snapshot.forEach(function (doc) {
+                                        var data = doc.data();
+                                        if (data.participants.includes(targetName)) {
+                                            foundRoomId = doc.id;
+                                        }
+                                    });
+
+                                    if (foundRoomId) {
+                                        switchRoom(foundRoomId, targetName);
+                                    } else if (targetUid) {
+                                        // NO existing room found: Create new DM with deterministic ID
+                                        var uids = [currentUser.uid, targetUid].sort();
+                                        var newRoomId = "dm_" + uids[0] + "_" + uids[1];
+                                        db.collection('rooms').doc(newRoomId).set({
+                                            type: 'dm',
+                                            participants: [currentUsername, targetName],
+                                            participantUids: [currentUser.uid, targetUid],
+                                            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                                            lastMessageAt: firebase.firestore.FieldValue.serverTimestamp()
+                                        }).then(function () {
+                                            switchRoom(newRoomId, targetName);
+                                        });
+                                    }
+                                    window.history.replaceState({}, document.title, window.location.pathname);
+                                })['catch'](function (err) {
+                                    console.error("Legacy deep link error:", err);
+                                });
+                        }
                     });
                 } else {
                     currentUser = null;
@@ -2187,7 +2190,7 @@
             var roomMsgTime = room.lastMessageAt || 0;
             if (roomMsgTime && roomMsgTime.toMillis) roomMsgTime = roomMsgTime.toMillis();
             else if (roomMsgTime && roomMsgTime.seconds) roomMsgTime = roomMsgTime.seconds * 1000;
-            
+
             var showUnread = false;
             var _lastRead = 0;
             if (roomStatesLoaded) {
@@ -2196,17 +2199,17 @@
                     showUnread = true;
                 }
             }
-            
+
             // Auto-sync current room state
             if (room.id === currentRoomId && roomStatesLoaded) {
-                 if (!userRoomStates[room.id]) userRoomStates[room.id] = {};
-                 var currentLastRead = userRoomStates[room.id].lastReadTime || 0;
-                 if (currentLastRead < roomMsgTime) {
-                     userRoomStates[room.id].lastReadTime = roomMsgTime;
-                     if (currentUser) {
-                         rtdb.ref('users_private/' + currentUser.uid + '/chat_states/' + room.id + '/lastReadTime').set(roomMsgTime);
-                     }
-                 }
+                if (!userRoomStates[room.id]) userRoomStates[room.id] = {};
+                var currentLastRead = userRoomStates[room.id].lastReadTime || 0;
+                if (currentLastRead < roomMsgTime) {
+                    userRoomStates[room.id].lastReadTime = roomMsgTime;
+                    if (currentUser) {
+                        rtdb.ref('users_private/' + currentUser.uid + '/chat_states/' + room.id + '/lastReadTime').set(roomMsgTime);
+                    }
+                }
             }
 
             var div = document.createElement('div');
@@ -2248,7 +2251,7 @@
 
             currentRoomId = id;
             document.getElementById('room-title').innerText = name;
-            
+
             if (currentUser && roomStatesLoaded) {
                 var now = Date.now();
                 if (!userRoomStates[id]) userRoomStates[id] = {};
@@ -2407,7 +2410,7 @@
 
                     // If the snapshot returned fewer messages than the limit we're at the start.
                     var snapshotSize = 0;
-                    snapshot.forEach(function() { snapshotSize++; });
+                    snapshot.forEach(function () { snapshotSize++; });
                     if (snapshotSize < 25) {
                         noMoreGeneralMessages = true;
                     }
@@ -2856,13 +2859,13 @@
                 }
                 // Deduplicate
                 var seen = {};
-                allEmojis = allEmojis.filter(function(e) {
+                allEmojis = allEmojis.filter(function (e) {
                     if (seen[e]) return false;
                     seen[e] = true;
                     return true;
                 });
                 // Sort longest first
-                allEmojis.sort(function(a, b) { return b.length - a.length; });
+                allEmojis.sort(function (a, b) { return b.length - a.length; });
                 _emojiNowrapCache = allEmojis;
             }
             for (var j = 0; j < _emojiNowrapCache.length; j++) {
@@ -2927,21 +2930,57 @@
         // legacy bulk preload of 200 users from /users_public has been removed
         // in favour of fully lazy resolution as each message renders.
 
-        function resolveMessageAuthor(uid, username, avatarId) {
-            if (!uid) {
-                // Old message with no uid — fall back to username-based lookup
-                resolveAvatar(username, avatarId);
+        function resolveMessageAuthor(uid, msgEl, avatarId) {
+            if (!uid || !msgEl) {
                 return;
             }
             // Draw hash fallback immediately so canvas isn't blank
-            drawAvatar(avatarId, username || uid);
+            drawAvatar(avatarId, uid);
             window.rekindleFetchUserCard(rtdb, uid, function (card) {
                 if (!card) return;
                 var seed = card.customAvatar || card.avatarSeed || uid;
                 drawAvatar(avatarId, seed);
-                var name = card.username || username;
-                if (name && !usernameToProfile[name]) {
-                    usernameToProfile[name] = { uid: uid, avatarSeed: seed };
+                var username = card.username || uid.substring(0, 8);
+
+                // Update name element with badges
+                var nameEl = msgEl.querySelector('.author-name-field');
+                if (nameEl) {
+                    var isSelf = currentUser && uid === currentUser.uid;
+                    var isDev = (username === 'ukiyo');
+                    var isPro = supporterUsers[username] || false;
+
+                    var nameContent = '';
+                    if (isDev) {
+                        var devBadge = '<span class="dev-badge">DEV</span>';
+                        var crownSvg = '<svg class="supporter-crown" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M2 4L5 18H19L22 4L15 11L12 4L9 11L2 4Z" stroke="black" stroke-width="2" fill="black"/></svg>';
+                        var crown = '<a href="http://link.rekindle.ink/donate" target="_blank" style="text-decoration:none;" title="Supporter">' + crownSvg + '</a>';
+                        nameContent = isSelf ? devBadge + crown + window.t('kindlechat.msg.you', 'You') : devBadge + crown + '<span style="font-weight:bold;">Ukiyo</span>';
+                    } else if (isPro) {
+                        var crownSvg = '<svg class="supporter-crown" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M2 4L5 18H19L22 4L15 11L12 4L9 11L2 4Z" stroke="black" stroke-width="2" fill="none"/></svg>';
+                        var crown = '<a href="http://link.rekindle.ink/donate" target="_blank" style="text-decoration:none;" title="Supporter">' + crownSvg + '</a>';
+                        nameContent = isSelf ? crown + window.t('kindlechat.msg.you', 'You') : crown + '<span style="font-weight:bold;">' + escapeHtml(username) + '</span>';
+                    } else {
+                        nameContent = isSelf ? window.t('kindlechat.msg.you', 'You') : '<span style="font-weight:bold;">' + escapeHtml(username) + '</span>';
+                    }
+                    nameEl.innerHTML = nameContent;
+                    nameEl.onclick = function () { openUserProfile(uid, username); };
+                }
+
+                // Update bubble theme
+                var bubble = msgEl.querySelector('.msg-bubble');
+                if (bubble) {
+                    if (username === 'ukiyo') {
+                        if (!bubble.classList.contains('developer')) bubble.classList.add('developer');
+                        bubble.classList.remove('supporter');
+                    } else if (supporterUsers[username]) {
+                        if (!bubble.classList.contains('supporter')) bubble.classList.add('supporter');
+                        bubble.classList.remove('developer');
+                    }
+                }
+
+                // Cache for username lookups
+                if (username && !usernameToProfile[username]) {
+                    usernameToProfile[username] = { uid: uid, avatarSeed: seed };
                 }
             });
         }
@@ -3017,30 +3056,16 @@
             var div = document.createElement('div');
             var toggleBtnHtml = '';
 
-            var isSelf = currentUser && (msg.user === currentUsername);
+            var isSelf = currentUser && msg.uid && (msg.uid === currentUser.uid);
             div.className = 'msg ' + (isSelf ? 'self' : 'other');
             div.dataset.msgId = msgId;
-            div.dataset.user = msg.user;
+            div.dataset.uid = msg.uid || '';
             if (typeof msg.timestamp === 'number') div.dataset.ts = msg.timestamp;
 
-            var safeUser = escapeHtml(msg.user || '');
+            var safeUser = escapeHtml(msg.user || (msg.uid ? msg.uid.substring(0, 8) : ''));
             var safeUid = escapeHtml(msg.uid || '');
             var avatarId = 'avatar-' + (msgId || Math.random().toString(36).substr(2, 9));
-            var nameHtml = isSelf ? '<span class="author-name-field" onclick="openUserProfile(\'' + safeUid + '\', \'' + safeUser + '\')">' + window.t('kindlechat.msg.you', 'You') + '</span>' : '<span class="author-name-field" onclick="openUserProfile(\'' + safeUid + '\', \'' + safeUser + '\')" style="font-weight:bold;">' + safeUser + '</span>';
-
-            // Developer Badge in Name
-            var isDev = (msg.user === 'ukiyo' || msg.user === 'ukiyo@rekindle.ink');
-            if (isDev) {
-                var devBadge = '<span class="dev-badge">DEV</span>';
-                var crownSvg = '<svg class="supporter-crown" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M2 4L5 18H19L22 4L15 11L12 4L9 11L2 4Z" stroke="black" stroke-width="2" fill="black"/></svg>';
-                var crown = '<a href="http://link.rekindle.ink/donate" target="_blank" style="text-decoration:none;" title="Supporter">' + crownSvg + '</a>';
-                nameHtml = isSelf ? '<span class="author-name-field" onclick="openUserProfile(\'' + safeUid + '\', \'' + safeUser + '\')">' + devBadge + crown + window.t('kindlechat.msg.you', 'You') + '</span>' : '<span class="author-name-field" onclick="openUserProfile(\'' + safeUid + '\', \'' + safeUser + '\')">' + devBadge + crown + '<span style="font-weight:bold;">Ukiyo</span></span>';
-            } else if (supporterUsers[msg.user] || msg.isPro) {
-                // Supporter Crown (SVG for Kindle compatibility)
-                var crownSvg = '<svg class="supporter-crown" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M2 4L5 18H19L22 4L15 11L12 4L9 11L2 4Z" stroke="black" stroke-width="2" fill="none"/></svg>';
-                var crown = '<a href="http://link.rekindle.ink/donate" target="_blank" style="text-decoration:none;" title="Supporter">' + crownSvg + '</a>';
-                nameHtml = isSelf ? '<span class="author-name-field" onclick="openUserProfile(\'' + safeUid + '\', \'' + safeUser + '\')">' + crown + window.t('kindlechat.msg.you', 'You') + '</span>' : '<span class="author-name-field" onclick="openUserProfile(\'' + safeUid + '\', \'' + safeUser + '\')">' + crown + '<span style="font-weight:bold;">' + safeUser + '</span></span>';
-            }
+            var nameHtml = isSelf ? '<span class="author-name-field" onclick="openUserProfile(\'' + safeUid + '\', \'\')">' + window.t('kindlechat.msg.you', 'You') + '</span>' : '<span class="author-name-field" onclick="openUserProfile(\'' + safeUid + '\', \'\')" style="font-weight:bold;">' + safeUser + '</span>';
 
 
             var timeStr = msg.timestamp ? formatChatTime(msg.timestamp) : "";
@@ -3063,7 +3088,7 @@
                 }
             } else if (currentUser && isCurrentUserMod && isModeratorMode && currentRoomId === 'general') {
                 var timeoutUid = escapeHtml(msg.uid || '').replace(/\\/g, "\\\\\\\\").replace(/'/g, "\\'");
-                var timeoutName = escapeHtml(msg.user || 'this user').replace(/\\/g, "\\\\\\\\").replace(/'/g, "\\'");
+                var timeoutName = escapeHtml(msg.user || (msg.uid ? msg.uid.substring(0, 8) : 'this user')).replace(/\\/g, "\\\\\\\\").replace(/'/g, "\\'");
                 if (timeoutUid && timeoutUid !== currentUser.uid) {
                     modControlsHtml += '<button style="background:black;color:white;border:none;padding:1px 6px;font-size:0.7rem;cursor:pointer;font-family:inherit;margin-left:4px;" onclick="timeOutUser(\'' + timeoutUid + '\', \'' + timeoutName + '\')">Timeout</button>';
                 }
@@ -3087,12 +3112,12 @@
                 var gameType = parts[0];
                 var gameId = parts[1];
                 var gameName = gameType.charAt(0).toUpperCase() + gameType.slice(1);
-                var isStarter = msg.user === currentUsername;
+                var isStarter = msg.uid === currentUser.uid;
 
                 var displayMsg = '';
                 if (gameType === 'words') {
                     // displayMsg = msg.user + ' started a Scrabble Game\n' + (isStarter ? 'Wait for a player to join!' : 'Click to Join!');
-                    var line1 = window.t('kindlechat.game.started', '{{user}} started a {{game}} Game').replace('{{user}}', msg.user).replace('{{game}}', 'Scrabble');
+                    var line1 = window.t('kindlechat.game.started', '{{user}} started a {{game}} Game').replace('{{user}}', msg.user || (msg.uid ? msg.uid.substring(0, 8) : 'Someone')).replace('{{game}}', 'Scrabble');
                     var line2 = isStarter ? window.t('kindlechat.game.wait', 'Wait for a player to join!') : window.t('kindlechat.game.join', 'Click to Join!');
                     displayMsg = line1 + '\n' + line2;
                 } else {
@@ -3197,13 +3222,7 @@
                 }
             }
 
-            // Theme Injection
-            var isDev = (msg.user === 'ukiyo' || msg.user === 'ukiyo@rekindle.ink');
-            if (isDev) {
-                bubbleContent = bubbleContent.replace('class="msg-bubble', 'class="msg-bubble developer');
-            } else if (supporterUsers[msg.user] || msg.isPro) {
-                bubbleContent = bubbleContent.replace('class="msg-bubble', 'class="msg-bubble supporter');
-            }
+            // Theme injection now handled asynchronously by resolveMessageAuthor
 
             var reactButton = (currentUser)
                 ? '<div class="react-btn" onclick="openReactionTarget(\'' + msgId + '\', this, event)">+</div>'
@@ -3211,7 +3230,7 @@
 
             // Save button for pixel art (appears next to reaction button)
             var saveButton = (msg.is_pixel_art)
-                ? '<div class="save-btn" onclick="savePixelArt(\'' + msgId + '\', \'' + escapeHtml(msg.user) + '\', this)">' + (window.t ? window.t('pixel.btn.save', 'Save') : 'Save') + '</div>'
+                ? '<div class="save-btn" onclick="savePixelArt(\'' + msgId + '\', \'' + escapeHtml(msg.uid || '') + '\', this)">' + (window.t ? window.t('pixel.btn.save', 'Save') : 'Save') + '</div>'
                 : '';
 
             // TRANSLATION BUTTON (Client-side fallback) - REMOVED
@@ -3287,7 +3306,7 @@
             // Resolve avatar after DOM insertion.
             // New messages (with uid): direct RTDB lookup, same as topics.
             // Old messages (no uid): username-based fallback.
-            resolveMessageAuthor(msg.uid || null, msg.user, avatarId);
+            resolveMessageAuthor(msg.uid, div, avatarId);
 
             if (msg.is_flipnote && msg.flipnote_data) {
                 setTimeout(function () { playFlipnote(msgId); }, 200);
@@ -3337,13 +3356,13 @@
 
             checkRules(function () {
                 markSendBusy();
-                setTimeout(function() { isSendingMessage = false; }, 3000); // failsafe unlock
+                setTimeout(function () { isSendingMessage = false; }, 3000); // failsafe unlock
 
                 // SPAM PROTECTION: Enforced server-side so it cannot be bypassed client-side
                 if (currentRoomId === 'general') {
                     var postGeneralChatMessage = firebase.functions().httpsCallable('postGeneralChatMessage');
                     postGeneralChatMessage({ text: text })
-                        .then(function(result) {
+                        .then(function (result) {
                             if (!result.data.allowed) {
                                 var waitSec = Math.ceil((result.data.retryAfter || 20000) / 1000);
                                 showModal('Please wait ' + waitSec + ' seconds before posting again.', false);
@@ -3356,7 +3375,7 @@
                                 fireTranslationRequest(currentUsername, currentUser.uid, text, result.data.key, 1);
                             }
                         })
-                        .catch(function(e) {
+                        .catch(function (e) {
                             resetSendState();
                             console.error('Error posting message:', e);
                             var msg = e.message || 'Error sending message. Please try again.';
@@ -3525,7 +3544,7 @@
             var unitSelect = document.createElement('select');
             unitSelect.style.cssText = 'border:2px solid black; border-radius:0; padding:6px; font-family:inherit; background:white; cursor:pointer;';
             unitSelect.innerHTML = '<option value="hours">Hours</option><option value="minutes">Minutes</option>';
-            unitSelect.onchange = function() {
+            unitSelect.onchange = function () {
                 if (unitSelect.value === 'minutes') {
                     hoursInput.max = '1440';
                     hoursInput.step = '1';
@@ -3665,11 +3684,11 @@
             var cancelBtn = document.createElement('button');
             cancelBtn.textContent = 'Cancel';
             cancelBtn.style.cssText = 'font-family:inherit;font-size:0.8rem;border:2px solid black;background:white;padding:4px 12px;cursor:pointer;box-shadow:2px 2px 0 black;';
-            cancelBtn.onclick = function() { document.body.removeChild(overlay); };
+            cancelBtn.onclick = function () { document.body.removeChild(overlay); };
             var confirmBtn = document.createElement('button');
             confirmBtn.textContent = 'Delete';
             confirmBtn.style.cssText = 'font-family:inherit;font-size:0.8rem;border:2px solid black;background:black;color:white;padding:4px 12px;cursor:pointer;box-shadow:2px 2px 0 black;';
-            confirmBtn.onclick = function() {
+            confirmBtn.onclick = function () {
                 var reason = reasonInput.value.trim();
                 if (!reason) { deleteErrorEl.textContent = 'A reason is required.'; return; }
                 document.body.removeChild(overlay);
@@ -3687,7 +3706,7 @@
             box.appendChild(body);
             overlay.appendChild(box);
             document.body.appendChild(overlay);
-            setTimeout(function() { reasonInput.focus(); }, 50);
+            setTimeout(function () { reasonInput.focus(); }, 50);
         }
 
         function deleteGeneralMessage(msgId) {
@@ -3695,8 +3714,8 @@
             if (currentRoomId !== 'general') return;
             var isMod = isCurrentUserMod && isModeratorMode && currentUsername !== 'ukiyo';
             if (isMod) {
-                showModDeleteModal("Permanently delete this message?", function(reason) {
-                    rtdb.ref('kindlechat/messages/' + msgId).once('value').then(function(snap) {
+                showModDeleteModal("Permanently delete this message?", function (reason) {
+                    rtdb.ref('kindlechat/messages/' + msgId).once('value').then(function (snap) {
                         var msgData = snap.val();
                         if (!msgData) return;
                         var logKey = rtdb.ref('mod_actions').push().key;
@@ -3714,7 +3733,7 @@
                             undone: false
                         };
                         updates['kindlechat/messages/' + msgId] = null;
-                        rtdb.ref().update(updates)['catch'](function(e) {
+                        rtdb.ref().update(updates)['catch'](function (e) {
                             showModal("Delete failed: " + e.message);
                         });
                     });
@@ -3788,7 +3807,6 @@
 
             // Write message immediately so it appears at once, then translate in background
             var messageData = {
-                user: currentUsername,
                 uid: currentUser.uid,
                 timestamp: firebase.database.ServerValue.TIMESTAMP,
                 text: text
@@ -3813,13 +3831,12 @@
         // --- GENERAL CHANNEL: Send to Realtime Database (Direct/Fallback) ---
         function sendGeneralMessageToRTDB(text) {
             var messageData = {
-                user: currentUsername,
                 uid: currentUser.uid,
                 timestamp: firebase.database.ServerValue.TIMESTAMP,
                 text: text
             };
 
-            generalChatRef.push(messageData).then(function() {
+            generalChatRef.push(messageData).then(function () {
                 resetSendState();
             })['catch'](function (e) {
                 resetSendState();
@@ -3833,7 +3850,6 @@
         // --- DMs: Send to Firestore ---
         function sendDMToFirestore(text) {
             var messageData = {
-                user: currentUsername,
                 uid: currentUser.uid,
                 timestamp: firebase.firestore.FieldValue.serverTimestamp(),
                 text: text
@@ -3873,7 +3889,7 @@
         }
 
         // --- PIXEL ART SAVING ---
-        function savePixelArt(msgId, authorName, btnElement) {
+        function savePixelArt(msgId, authorUid, btnElement) {
             // Get the image URL from the sibling msg-bubble element
             var parent = btnElement.parentElement;
             var bubble = parent ? parent.querySelector('.msg-bubble') : null;
@@ -3898,6 +3914,12 @@
             if (existing) {
                 showModal("You already saved this drawing!");
                 return;
+            }
+
+            // Resolve author name from user_cards if available
+            var authorName = authorUid ? authorUid.substring(0, 8) : 'Unknown';
+            if (authorUid && window.rekindleCardCache && window.rekindleCardCache[authorUid]) {
+                authorName = window.rekindleCardCache[authorUid].username || authorName;
             }
 
             // Create Entry
@@ -4270,7 +4292,7 @@
                             .then(function (ref) {
                                 newRoomRef = ref;
                                 return newRoomRef.collection('messages').add({
-                                    user: currentUsername,
+                                    uid: currentUser.uid,
                                     text: messageInput,
                                     timestamp: firebase.firestore.FieldValue.serverTimestamp()
                                 });
@@ -4524,8 +4546,8 @@
             d.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:10000;display:flex;align-items:center;justify-content:center;';
             d.innerHTML = '<div style="background:white;border:2px solid black;box-shadow:4px 4px 0 black;padding:20px;max-width:320px;font-family:sans-serif;text-align:center;"><p style="margin-bottom:16px;">' + escapeHtml(msg) + '</p><div><button id="sc-ok" style="border:2px solid black;box-shadow:2px 2px 0 black;padding:6px 16px;background:black;color:white;font-weight:bold;cursor:pointer;margin-right:10px;">OK</button><button id="sc-cancel" style="border:2px solid black;box-shadow:2px 2px 0 black;padding:6px 16px;background:white;font-weight:bold;cursor:pointer;">Cancel</button></div></div>';
             document.body.appendChild(d);
-            d.querySelector('#sc-ok').onclick = function() { d.remove(); if (onOk) onOk(); };
-            d.querySelector('#sc-cancel').onclick = function() { d.remove(); if (onCancel) onCancel(); };
+            d.querySelector('#sc-ok').onclick = function () { d.remove(); if (onOk) onOk(); };
+            d.querySelector('#sc-cancel').onclick = function () { d.remove(); if (onCancel) onCancel(); };
         }
 
         var _confirmCallback = null;
