@@ -694,9 +694,6 @@
                             <button id="btn-message-profile" class="sys-btn" onclick="messageUser()"
                                 style="display:none;; margin-left: 10px"
                                 data-i18n="neighbourhood.btn.message">Message</button>
-                            <button id="btn-repair-handles" class="sys-btn" onclick="repairHandles()"
-                                style="display:none; background:#000; color:#fff;; margin-left: 10px">Repair
-                                Handles</button>
                         </div>
                     </div>
 
@@ -1118,7 +1115,6 @@
         let currentDrawMode = 1;
         let isDrawing = false;
         let tempPixelData = new Array(64).fill(0);
-        let cachedUsers = []; // Cache for search/filtering
         let supporterUsers = {}; // Store supporter usernames as object for ES5 compatibility
 
         function fetchSupporters() {
@@ -1220,7 +1216,6 @@
                             loadPosts();
                         }
                     });
-                    loadMyProfile();
                 });
             } else {
                 document.getElementById('login-overlay').style.display = 'flex';
@@ -1292,9 +1287,10 @@
                 view.classList.add('active');
             }
 
-            // if (tab === 'list') { loadAllUsers(); } else
             if (tab === 'posts') {
                 loadPosts();
+            } else if (tab === 'profile') {
+                loadMyProfile();
             }
         }
 
@@ -1427,11 +1423,6 @@
                             customAvatar: myProfile.customAvatar || null
                         });
                     }
-                    // Show repair button to ukiyo
-                    if (currentUser.email === 'ukiyo@rekindle.ink') {
-                        document.getElementById('btn-repair-handles').style.display = 'inline-block';
-                    }
-
                     // Populate Inputs
                     const p = myProfile;
                     document.getElementById('input-bio').value = p.bio || '';
@@ -1533,71 +1524,6 @@
             }
             if (user.uid) return user.uid.split('@')[0].substring(0, 8);
             return 'Anonymous';
-        }
-
-        async function repairHandles() {
-            if (!currentUser || currentUser.email !== 'ukiyo@rekindle.ink') return;
-            showConfirmModal("Start Handle Repair? This will scan public profiles and recent KindleChat reactions to fix missing handles.", async function() {
-                const btn = document.getElementById('btn-repair-handles');
-                btn.disabled = true;
-                btn.innerText = "Repairing...";
-
-                try {
-                    // 1. Scan Public Profiles
-                    const snap = await db.ref('users_public').once('value');
-                    const users = snap.val();
-                    let fixCount = 0;
-
-                    for (let uid in users) {
-                        const u = users[uid];
-                        let needsSync = false;
-                        let email = u.email;
-
-                        // A. Email is empty but displayName is an email
-                        if (!email && u.displayName && u.displayName.indexOf('@') !== -1) {
-                            email = u.displayName;
-                            needsSync = true;
-                        }
-
-                        if (needsSync && email) {
-                            console.log(`[Repair] Syncing handle for ${uid} as ${email}`);
-                            await db.ref('users_public/' + uid).update({ email: email });
-                            fixCount++;
-                        }
-                    }
-
-                    // 2. Scan Recent KindleChat Reactions
-                    // Reactions often store { reaction: "...", username: "handle" }
-                    // This is a great source of Truth for UIDs
-                    const reactionSnap = await db.ref('kindlechat/messages').limitToLast(200).once('value');
-                    const msgs = reactionSnap.val();
-                    for (let mid in msgs) {
-                        const msg = msgs[mid];
-                        if (msg.reactions) {
-                            for (let rUid in msg.reactions) {
-                                const r = msg.reactions[rUid];
-                                if (r && typeof r === 'object' && r.username) {
-                                    // Check if this user needs repair
-                                    if (!users[rUid] || !users[rUid].email) {
-                                        const emailVal = r.username.includes('@') ? r.username : r.username + '@rekindle.ink';
-                                        console.log(`[Repair] Found handle in reaction for ${rUid}: ${emailVal}`);
-                                        await db.ref('users_public/' + rUid).update({ email: emailVal });
-                                        fixCount++;
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    showAlertModal(`Repair Complete! Processed ${fixCount} handles.`);
-                } catch (e) {
-                    console.error("Repair Error:", e);
-                    showAlertModal("Repair Error: " + e.message);
-                } finally {
-                    btn.disabled = false;
-                    btn.innerText = "Repair Handles";
-                }
-            });
         }
 
         // VIEW / EDIT MODES
@@ -2055,258 +1981,6 @@
             closeCityPicker();
         }
 
-        // LOAD ALL USERS & FIND SIMILAR/NEAR
-        function loadAllUsers() {
-            console.log("loadAllUsers called");
-            const loadingMsg = document.getElementById('loading-msg');
-            if (loadingMsg) loadingMsg.style.display = 'block';
-
-            if (!currentUser) {
-                if (loadingMsg) loadingMsg.innerText = "Error: Not logged in.";
-                return;
-            }
-
-            db.ref('users_public').orderByChild('lastActive').limitToLast(300).once('value')
-                .then(snapshot => {
-                    if (loadingMsg) loadingMsg.style.display = 'none';
-                    cachedUsers = [];
-
-                    snapshot.forEach(child => {
-                        const u = child.val();
-                        u.uid = child.key;
-                        // Exclude self and private profiles
-                        if (u.uid !== currentUser.uid && !u.isPrivate) {
-                            cachedUsers.push(u);
-                        }
-                    });
-
-                    // Sort by last active (newest first) — limitToLast returns ascending, so reverse
-                    cachedUsers.reverse();
-
-                    // Initial Render
-                    renderLists();
-                })
-                .catch(err => {
-                    console.error("Load error:", err);
-                    if (loadingMsg) {
-                        loadingMsg.style.display = 'block';
-                        loadingMsg.innerText = "Error loading list: " + err.message;
-                    }
-                });
-        }
-
-        function toggleSearchClear() {
-            const input = document.getElementById('input-search');
-            const clearBtn = document.getElementById('btn-clear-search');
-            if (input && clearBtn) {
-                clearBtn.style.display = input.value.trim() ? 'inline-block' : 'none';
-            }
-        }
-
-        function clearSearch() {
-            const input = document.getElementById('input-search');
-            if (input) {
-                input.value = '';
-                toggleSearchClear();
-                renderLists();
-            }
-        }
-
-        function renderLists() {
-            const listContainer = document.getElementById('all-list');
-            const similarContainer = document.getElementById('similar-list');
-            const dualMatchView = document.getElementById('dual-match-view');
-            const searchInput = document.getElementById('input-search');
-
-            listContainer.innerHTML = '';
-            similarContainer.innerHTML = '';
-
-            if (cachedUsers.length === 0) {
-                listContainer.innerHTML = '<div style="padding:20px; text-align:center;">No other users found.</div>';
-                dualMatchView.style.display = 'none';
-                return;
-            }
-
-            // FILTERING
-            const term = searchInput ? searchInput.value.trim().toLowerCase() : '';
-            const displayUsers = cachedUsers.filter(u => {
-                if (!term) return true;
-                const name = (u.displayName || '').toLowerCase();
-                const loc = (u.location || '').toLowerCase();
-                const interests = Array.isArray(u.interests) ? u.interests.join(' ').toLowerCase() : (u.interests || '').toLowerCase();
-                const bio = (u.bio || '').toLowerCase();
-                const occupation = (u.occupation || '').toLowerCase();
-                const hometown = (u.hometown || '').toLowerCase();
-                const language = (u.language || '').toLowerCase();
-
-                return name.includes(term) || loc.includes(term) || interests.includes(term) ||
-                    bio.includes(term) || occupation.includes(term) || hometown.includes(term) || language.includes(term);
-            });
-
-            if (displayUsers.length === 0) {
-                listContainer.innerHTML = '<div style="padding:20px; text-align:center;">No users match your search.</div>';
-                dualMatchView.style.display = 'none';
-                return;
-            }
-
-            // Calculate Matches & Filtering
-            // Normalize my interests to lowercase for case-insensitive matching
-            const myTags = new Set((myProfile.interests || []).map(t => t.toLowerCase()));
-            const myLoc = myProfile.location ? myProfile.location.toLowerCase() : '';
-            const myAge = calculateAge(myProfile.birthday);
-
-            const similarUsers = [];
-            const shownInSpecial = new Set();
-
-            displayUsers.forEach(u => {
-                let score = 0;
-
-                // Location match (+3 points) - case insensitive
-                if (myLoc && u.location && u.location.toLowerCase() === myLoc) {
-                    score += 3;
-                }
-
-                // Interests match (+1 point each) - case insensitive
-                if (u.interests && myTags.size > 0) {
-                    if (Array.isArray(u.interests)) {
-                        u.interests.forEach(tag => {
-                            if (myTags.has(tag.toLowerCase())) score++;
-                        });
-                    }
-                }
-
-                // Age match
-                if (myAge !== null && u.birthday) {
-                    const uAge = calculateAge(u.birthday);
-                    if (uAge !== null) {
-                        const ageDiff = Math.abs(myAge - uAge);
-                        if (ageDiff <= 2) score += 5;
-                        else if (ageDiff <= 5) score += 3;
-                        else if (ageDiff <= 10) score += 1;
-                    }
-                }
-
-                u.matchScore = score;
-                if (score > 0) {
-                    similarUsers.push(u);
-                    shownInSpecial.add(u.uid);
-                }
-            });
-
-            // Sort Similar by Score
-            similarUsers.sort((a, b) => b.matchScore - a.matchScore);
-
-            console.log("Matches found:", similarUsers.length);
-
-            // Render Matches
-            if (similarUsers.length > 0) {
-                dualMatchView.style.display = 'block';
-
-                // Clear and render similar list
-                similarContainer.innerHTML = '';
-                similarUsers.forEach((u, idx) => {
-                    try { renderUserCard(u, similarContainer, true, idx * 50); }
-                    catch (e) { console.error("Error rendering similar user", u, e); }
-                });
-            } else {
-                dualMatchView.style.display = 'none';
-            }
-
-            // Render All List (Excluding those in special lists IF NOT SEARCHING? 
-            // Actually, if searching, you probably want to see everyone in valid result list.
-            // But let's keep the exclusion logic for cleaner UI where "Top Matches" are highlighted 
-            // and removed from the general list below to avoid duplicates.
-
-            let allIdx = 0;
-            displayUsers.forEach(u => {
-                if (!shownInSpecial.has(u.uid)) {
-                    renderUserCard(u, listContainer, false, allIdx * 50);
-                    allIdx++;
-                }
-            });
-        }
-
-
-
-        function renderUserCard(user, container, showMatch = false, delay = 0) {
-            const div = document.createElement('div');
-            div.className = 'user-card';
-            div.style.cursor = 'pointer';
-            div.onclick = (e) => {
-                if (e.target.tagName === 'A') return;
-                openUserProfile(user.uid);
-            };
-
-            // Match badge
-            const matchBadge = showMatch && user.matchScore ? `<span style="font-size:0.7rem; background:#000; color:#fff; padding:2px 5px; margin-left:5px; border-radius:2px;">★${user.matchScore}</span>` : '';
-
-            // Badge Logic
-            let badgeHtml = '';
-            const dName = user.displayName || 'Anonymous';
-            const isDev = (user.uid === 'ukiyo' || user.email === 'ukiyo@rekindle.ink' || dName === 'ukiyo' || dName === 'ukiyo@rekindle.ink');
-            const isPro = user.kindlePlus || supporterUsers[dName] || (user.email && supporterUsers[user.email]);
-
-            if (isDev) {
-                badgeHtml = '<span class="dev-tag" style="margin-left:5px;">DEV</span>';
-            } else if (isPro) {
-                badgeHtml = '<span style="margin-left:5px; display:inline-block; vertical-align:middle;"><svg class="supporter-crown" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="width:14px; height:14px;"><path d="M2 4L5 18H19L22 4L15 11L12 4L9 11L2 4Z" stroke="currentColor" stroke-width="2" fill="none"/></svg></span>';
-            }
-
-            // Avatar ID
-            const avatarId = 'avatar-' + (user.uid || Math.random().toString(36).substr(2));
-
-            // Location & Age
-            let subtitle = user.location || '';
-            if (user.birthday) {
-                const age = calculateAge(user.birthday);
-                if (age !== null) subtitle += (subtitle ? ', ' : '') + age;
-            }
-
-            // Common Interests only (White text on black squares)
-            let tagsHtml = '';
-            if (user.interests && Array.isArray(user.interests)) {
-                // Get my interests for intersection
-                // myProfile is global
-                const myInterests = new Set((myProfile.interests || []).map(i => i.toLowerCase()));
-
-                // Filter for common
-                const common = user.interests.filter(i => myInterests.has(i.toLowerCase()));
-
-                if (common.length > 0) {
-                    tagsHtml = '<div style="margin-top:6px; display:flex; flex-wrap:wrap;">' +
-                        common.map(t => `<span class="tag" style="font-size:0.75rem; background:black; color:white; border-color:black; padding:3px 6px; margin-right:4px; margin-bottom:4px;">${escapeHtml(t)}</span>`).join('') +
-                        '</div>';
-                }
-            }
-
-            div.innerHTML = `
-                <canvas id="${avatarId}" class="avatar-canvas" width="64" height="64" style="width:64px; height:64px; border:2px solid black; image-rendering:pixelated; flex-shrink:0;"></canvas>
-                <div style="flex-grow:1; min-width:0;">
-                    <div style="font-weight:bold; font-size:1.1rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
-                        ${(function () {
-                    const kName = getKindleName(user);
-                    const dName = user.displayName || 'Anonymous';
-                    if (dName === kName) return escapeHtml(dName);
-                    return `${escapeHtml(dName)} <span class="user-handle">@${escapeHtml(kName)}</span>`;
-                })()}${matchBadge}${badgeHtml}
-                    </div>
-                    <div style="font-size:0.8rem; color:#666;">${escapeHtml(subtitle)}</div>
-                    ${user.bio ? `<div style="font-size:0.8rem; color:#333; margin-top:4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:200px;">${escapeHtml(user.bio.substring(0, 60))}${user.bio.length > 60 ? '...' : ''}</div>` : ''}
-                    ${tagsHtml}
-                </div>
-            `;
-            container.appendChild(div);
-
-            // Draw avatar after append
-            setTimeout(() => {
-                if (window.rekindleFetchAvatarSeed) {
-                    window.rekindleFetchAvatarSeed(db, user.uid, seed => drawAvatar(avatarId, seed));
-                } else {
-                    drawAvatar(avatarId, user.uid);
-                }
-            }, 0);
-        }
-
         function openUserProfile(uid) {
             // If it's me, go to my profile tab
             if (uid === currentUser.uid) {
@@ -2489,33 +2163,6 @@
             // Admin features have been removed
         }
 
-        function generateRandomUsers(count) {
-            const cities = ["Amsterdam", "Berlin", "New York", "Tokyo", "London", "Paris", "Sydney", "Melbourne"];
-            const interests = ["Reading", "Coding", "Music", "Travel", "Art", "Gaming", "Coffee", "Cinema", "Writing", "Photography"];
-            const names = ["Alex", "Jordan", "Casey", "Riley", "Morgan", "Taylor", "Quinn", "Avery", "Blake", "Cameron"];
-
-            for (let i = 0; i < count; i++) {
-                const uid = 'test_' + (typeof crypto !== 'undefined' && crypto.getRandomValues ? Array.from(crypto.getRandomValues(new Uint8Array(12))).map(b => b.toString(36)).join('').substr(0, 9) : Math.random().toString(36).substr(2, 9));
-                const city = cities[Math.floor(Math.random() * cities.length)];
-                const ints = [];
-                for (let j = 0; j < 3; j++) {
-                    const pick = interests[Math.floor(Math.random() * interests.length)];
-                    if (!ints.includes(pick)) ints.push(pick);
-                }
-
-                const user = {
-                    displayName: names[Math.floor(Math.random() * names.length)] + " " + Math.floor(Math.random() * 1000),
-                    location: city,
-                    interests: ints,
-                    bio: "Auto-generated test user.",
-                    avatarSeed: Math.floor(Math.random() * 10000)
-                };
-
-                db.ref('users_public/' + uid).set(user);
-            }
-            showAlertModal(`Generated ${count} test users. Refresh to see them.`);
-        }
-
         // --- DRAW AVATAR ---
         function drawAvatar(canvasId, seed) {
             const canvas = document.getElementById(canvasId);
@@ -2641,16 +2288,19 @@
         let isAdminMode = false;
         let isCurrentUserMod = false;
         let isModeratorMode = false;
-        let openCommentsPosts = new Set(); // Track which posts have comments expanded
-        const commentListeners = new Map(); // postId -> { ref, fn }
+        let openCommentsPosts = new Set();
+        const commentListeners = new Map();
+        const PAGE_SIZE = 10;
+        const renderedPostKeys = new Set();
+        let oldestPostKey = null;
+        let allPostsLoaded = false;
+        let loadingMore = false;
 
         function loadPosts() {
-            // Check Admin capability
             if (currentUser && currentUser.email === 'ukiyo@rekindle.ink') {
                 const toggler = document.getElementById('admin-toggle-container');
                 if (toggler) toggler.style.display = 'block';
             } else if (currentUser) {
-                // Check moderator capability
                 db.ref('moderators/' + currentUser.uid).once('value').then(snap => {
                     isCurrentUserMod = snap.val() === true;
                     if (isCurrentUserMod) {
@@ -2663,75 +2313,129 @@
             const feed = document.getElementById('posts-feed');
             const loader = document.getElementById('loading-posts');
 
-            if (postsListener) return; // Already listening
+            if (postsListener) return;
 
             loader.style.display = 'block';
             feed.innerHTML = '';
+            renderedPostKeys.clear();
+            oldestPostKey = null;
+            allPostsLoaded = false;
+            loadingMore = false;
 
-            const postsRef = db.ref('neighbourhood_posts').limitToLast(50);
-            const renderedKeys = new Set();
+            const postsRef = db.ref('neighbourhood_posts').limitToLast(PAGE_SIZE);
             let initialDone = false;
 
-            // One-time initial fetch — same bandwidth cost as before but fires only once,
-            // not on every subsequent comment add or post edit.
             postsRef.once('value', snapshot => {
                 loader.style.display = 'none';
-
                 recentPosts = [];
                 if (snapshot.exists()) {
                     snapshot.forEach(child => {
                         recentPosts.push({ id: child.key, ...child.val() });
-                        renderedKeys.add(child.key);
+                        renderedPostKeys.add(child.key);
                     });
-                    recentPosts.reverse(); // Newest first
+                    recentPosts.reverse();
+                    if (recentPosts.length > 0) oldestPostKey = recentPosts[recentPosts.length - 1].id;
+                    if (recentPosts.length < PAGE_SIZE) allPostsLoaded = true;
                     recentPosts.forEach(post => renderPostItem(post, feed));
                 } else {
                     feed.innerHTML = '<div style="text-align:center; color:#666;" data-empty="true">No posts yet. Be the first!</div>';
+                    allPostsLoaded = true;
                 }
+                updateEndOfFeed(feed);
                 initialDone = true;
             });
 
-            // child_added — only fires for genuinely new posts added after initial load.
-            // Transmits only the one new post instead of all 50.
             postsRef.on('child_added', snap => {
-                if (!initialDone || renderedKeys.has(snap.key)) return;
-                renderedKeys.add(snap.key);
-
+                if (!initialDone || renderedPostKeys.has(snap.key)) return;
+                renderedPostKeys.add(snap.key);
                 const post = { id: snap.key, ...snap.val() };
                 recentPosts.unshift(post);
-
                 const emptyEl = feed.querySelector('[data-empty]');
                 if (emptyEl) emptyEl.remove();
-
-                renderPostItem(post, feed, /* prepend= */ true);
+                renderPostItem(post, feed, true);
             });
 
-            // child_removed — post deleted, remove card and clean up its comment listener.
             postsRef.on('child_removed', snap => {
-                renderedKeys.delete(snap.key);
+                renderedPostKeys.delete(snap.key);
                 recentPosts = recentPosts.filter(p => p.id !== snap.key);
-
                 const card = feed.querySelector('[data-post-id="' + snap.key + '"]');
                 if (card) card.remove();
-
                 if (commentListeners.has(snap.key)) {
                     const { ref, fn } = commentListeners.get(snap.key);
                     ref.off('value', fn);
                     commentListeners.delete(snap.key);
                 }
-
                 if (recentPosts.length === 0) {
                     feed.innerHTML = '<div style="text-align:center; color:#666;" data-empty="true">No posts yet. Be the first!</div>';
                 }
             });
 
-            // NOTE: child_changed intentionally omitted. The per-post comment listeners
-            // already handle comment updates granularly. Subscribing to child_changed would
-            // re-download the full post + all its comments on every comment add — the same
-            // problem we're fixing. Post text / translation edits won't reflect in real-time
-            // (users see them on next refresh), which is an acceptable trade-off.
+            postsListener = postsRef;
 
-            postsListener = postsRef; // Store ref for potential cleanup
+            // Infinite scroll — listen on the scrollable view panel
+            const panel = document.getElementById('view-posts');
+            panel.addEventListener('scroll', onPostsPanelScroll);
+        }
+
+        function onPostsPanelScroll() {
+            if (loadingMore || allPostsLoaded) return;
+            const panel = document.getElementById('view-posts');
+            if (panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 300) {
+                loadMorePosts();
+            }
+        }
+
+        async function loadMorePosts() {
+            if (loadingMore || allPostsLoaded || !oldestPostKey) return;
+            loadingMore = true;
+
+            const feed = document.getElementById('posts-feed');
+            const endEl = document.getElementById('posts-end');
+            if (endEl) endEl.innerText = 'Loading...';
+
+            try {
+                const snap = await db.ref('neighbourhood_posts')
+                    .orderByKey()
+                    .endAt(oldestPostKey)
+                    .limitToLast(PAGE_SIZE + 1)
+                    .once('value');
+
+                const olderPosts = [];
+                snap.forEach(child => {
+                    // endAt includes the cursor key itself — skip it and already-rendered keys
+                    if (child.key !== oldestPostKey && !renderedPostKeys.has(child.key)) {
+                        olderPosts.push({ id: child.key, ...child.val() });
+                        renderedPostKeys.add(child.key);
+                    }
+                });
+                olderPosts.reverse();
+
+                if (olderPosts.length === 0) {
+                    allPostsLoaded = true;
+                } else {
+                    if (olderPosts.length < PAGE_SIZE) allPostsLoaded = true;
+                    oldestPostKey = olderPosts[olderPosts.length - 1].id;
+                    olderPosts.forEach(post => renderPostItem(post, feed));
+                }
+            } catch (e) {
+                console.error('[Posts] loadMore error:', e);
+            }
+
+            loadingMore = false;
+            updateEndOfFeed(feed);
+        }
+
+        function updateEndOfFeed(feed) {
+            let endEl = document.getElementById('posts-end');
+            if (!endEl) {
+                endEl = document.createElement('div');
+                endEl.id = 'posts-end';
+                endEl.style.cssText = 'text-align:center; padding:15px; color:#999; font-size:0.8rem;';
+                feed.appendChild(endEl);
+            } else {
+                feed.appendChild(endEl); // keep at bottom
+            }
+            endEl.innerText = allPostsLoaded ? '— end —' : '';
         }
 
         function toggleAdminMode(enabled) {
@@ -2753,6 +2457,7 @@
             const div = document.createElement('div');
             div.className = 'post-card';
             div.dataset.uid = post.uid;
+            div.dataset.postId = post.id;
             div.style.position = 'relative';
 
             // Placeholder while resolving user card

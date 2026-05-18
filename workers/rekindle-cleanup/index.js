@@ -99,76 +99,84 @@ async function cleanKindlechatMessages(cutoff, token) {
 }
 
 async function cleanTopicComments(cutoff, token) {
-  // Fetch both in parallel: all comments + all topics (to catch comment-less topics)
   const [allTopicComments, allTopics] = await Promise.all([
     fbGet('topic_comments', token),
     fbGet('topics', token),
   ]);
 
-  const commentDeletions  = {}; // "topicId/commentId" → null
-  const topicUpdates      = {}; // "topicId" → null  OR  "topicId/commentCount" → N
-  const topicsWithContent = new Set(); // topics that still have ≥1 comment after cleanup
+  // Separate full-node deletes from individual comment deletes to avoid
+  // overlapping paths in the multi-path PATCH (Firebase rejects e.g.
+  // { "topicId": null, "topicId/commentId": null } as conflicting keys).
+  const topicFullDeletes   = new Set();  // delete entire topic_comments/topicId node
+  const topicPartialDeletes = {};        // topicId → [commentId, ...]
+  const topicUpdates        = {};
+  const topicsWithContent   = new Set();
 
   let deletedComments = 0;
   let deletedTopics   = 0;
 
-  // Pass 1: delete old comments; mark topics for deletion or count update
+  // Pass 1: queue old-comment deletions; mark empty topics for removal
   if (allTopicComments) {
     for (const [topicId, comments] of Object.entries(allTopicComments)) {
       const old = Object.entries(comments).filter(([, v]) => v.timestamp <= cutoff);
+      if (!old.length) { topicsWithContent.add(topicId); continue; }
 
-      if (!old.length) {
-        topicsWithContent.add(topicId);
-        continue;
-      }
-
-      for (const [commentId] of old) commentDeletions[`${topicId}/${commentId}`] = null;
       deletedComments += old.length;
-
       const remainingCount = Object.keys(comments).length - old.length;
+
       if (remainingCount === 0) {
+        topicFullDeletes.add(topicId);
         topicUpdates[topicId] = null;
         deletedTopics++;
       } else {
         topicsWithContent.add(topicId);
         topicUpdates[`${topicId}/commentCount`] = remainingCount;
+        topicPartialDeletes[topicId] = old.map(([k]) => k);
       }
     }
   }
 
-  // Pass 2: catch topics that have no topic_comments entry at all (comments
-  // were manually deleted by users, or the topic never received any comments)
+  // Pass 2: topics with no title (malformed) or no recent activity
   if (allTopics) {
     for (const [topicId, topicData] of Object.entries(allTopics)) {
       if (topicsWithContent.has(topicId) || topicUpdates[topicId] === null) continue;
-
-      // Delete topics with no title (malformed) regardless of timestamp
-      const hasTitle = topicData.title?.trim();
+      const hasTitle     = topicData.title?.trim();
       const lastActivity = topicData.lastActive || topicData.timestamp || 0;
       if (!hasTitle || lastActivity <= cutoff) {
+        topicFullDeletes.add(topicId);
+        delete topicPartialDeletes[topicId]; // full delete supersedes partial
         topicUpdates[topicId] = null;
         deletedTopics++;
-        // Also wipe any associated comments (defensive — shouldn't exist for
-        // comment-free topics, but covers race conditions)
-        commentDeletions[topicId] = null;
       }
     }
   }
 
-  // Pass 3: delete orphaned topic_comments nodes whose topic no longer exists
-  // in `topics` (e.g. deleted via admin tools or dedupe script outside this run)
+  // Pass 3: orphaned topic_comments nodes with no matching topic record
   if (allTopicComments) {
     const existingTopicIds = allTopics ? new Set(Object.keys(allTopics)) : new Set();
     for (const [topicId, comments] of Object.entries(allTopicComments)) {
       if (existingTopicIds.has(topicId)) continue;
-      // Delete the entire node rather than individual comments
-      commentDeletions[topicId] = null;
-      deletedComments += Object.keys(comments).length;
+      if (!topicFullDeletes.has(topicId)) {
+        deletedComments += Object.keys(comments).length;
+        topicFullDeletes.add(topicId);
+      }
+      delete topicPartialDeletes[topicId]; // full delete supersedes partial
     }
   }
 
-  if (Object.keys(commentDeletions).length) await fbPatch('topic_comments', commentDeletions, token);
-  if (Object.keys(topicUpdates).length)     await fbPatch('topics',         topicUpdates,     token);
+  // Build non-overlapping PATCH payloads
+  const commentPatch = {};
+  for (const topicId of topicFullDeletes) {
+    commentPatch[topicId] = null;
+  }
+  for (const [topicId, commentIds] of Object.entries(topicPartialDeletes)) {
+    for (const commentId of commentIds) {
+      commentPatch[`${topicId}/${commentId}`] = null;
+    }
+  }
+
+  if (Object.keys(commentPatch).length) await fbPatch('topic_comments', commentPatch, token);
+  if (Object.keys(topicUpdates).length)  await fbPatch('topics',         topicUpdates,  token);
 
   return { comments: deletedComments, topics: deletedTopics };
 }

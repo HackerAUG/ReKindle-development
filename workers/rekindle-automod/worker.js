@@ -17,6 +17,7 @@ const IDENTITY_API = `https://identitytoolkit.googleapis.com/v1/projects/${FIREB
 // The AI still runs and the automod_log is still written, so you can review
 // what it would have done. Flip to false when you're happy with it.
 const DRY_RUN = false;
+const ENABLED = false; // set to true to re-enable
 
 // ─── Strike Config ────────────────────────────────────────────────────────────
 // Reach STRIKE_LIMIT strikes within STRIKE_WINDOW_DAYS → auto full-nuke
@@ -71,6 +72,7 @@ If no violations: { "actions": [], "summary": "No violations found." }`;
 
 export default {
     async scheduled(event, env, ctx) {
+        if (!ENABLED) { console.log('[Automod] Disabled — skipping run.'); return; }
         ctx.waitUntil(runAutomod(env));
     },
 
@@ -130,12 +132,8 @@ async function runAutomod(env) {
         return;
     }
 
-    // Fetch users_public once and share it across gathering + UID lookups
-    let usersPublic = {};
-    try { usersPublic = await rtdbGet(idToken, 'users_public', '') || {}; } catch { }
-
     // Gather content from all four sources, split into context vs. recent
-    const { lines, uidMap } = await gatherContent(idToken, contextCutoff, actionCutoff, usersPublic);
+    const { lines, uidMap } = await gatherContent(idToken, contextCutoff, actionCutoff);
 
     if (lines.length === 0) {
         console.log('[Automod] No new messages in the last 10 minutes — nothing to evaluate.');
@@ -160,7 +158,7 @@ async function runAutomod(env) {
     const results = [];
     for (const action of (aiResult.actions || [])) {
         if (!action.username || action.username.toLowerCase() === 'ukiyo') continue;
-        const res = await applyAction(env, idToken, oauth2Token, action, uidMap, usersPublic);
+        const res = await applyAction(env, idToken, oauth2Token, action, uidMap);
         results.push(res);
     }
 
@@ -292,7 +290,7 @@ async function rtdbDelete(token, path) {
 // contextCutoff: how far back to fetch for background context (1 hour)
 // actionCutoff:  only messages newer than this should be evaluated for action (10 min)
 
-async function gatherContent(token, contextCutoff, actionCutoff, usersPublic = {}) {
+async function gatherContent(token, contextCutoff, actionCutoff) {
     // username (lowercase) -> { uid, displayName }
     const uidMap = {};
     function register(displayName, uid) {
@@ -346,12 +344,23 @@ async function gatherContent(token, contextCutoff, actionCutoff, usersPublic = {
             console.log(`[Automod] Neighbourhood: ${all.length} total, ${posts.length} in context window, ${recentCount} in action window`);
 
             if (posts.length) {
-                const nameFor = {};
+                // Collect every UID that appears in posts or their comments
+                const uidsNeeded = new Set();
+                posts.forEach(p => {
+                    uidsNeeded.add(p.uid);
+                    if (p.comments) Object.values(p.comments).forEach(c => { if (c?.uid) uidsNeeded.add(c.uid); });
+                });
+
+                // Batch-fetch only those user records in parallel
+                const userEntries = await Promise.all(
+                    [...uidsNeeded].map(uid => rtdbGet(token, `users_public/${uid}`).catch(() => null))
+                );
+                const userMap = {};
+                [...uidsNeeded].forEach((uid, i) => { userMap[uid] = userEntries[i]; });
+
                 const resolveUid = uid => {
-                    if (nameFor[uid]) return nameFor[uid];
-                    const u = usersPublic[uid];
+                    const u = userMap[uid];
                     const name = (u && (u.displayName || u.username || (u.email || '').split('@')[0])) || uid.substring(0, 8);
-                    nameFor[uid] = name;
                     register(name, uid);
                     return name;
                 };
@@ -645,18 +654,13 @@ or
 
 // ─── Action Execution ─────────────────────────────────────────────────────────
 
-async function applyAction(env, idToken, oauth2Token, action, uidMap, usersPublic) {
+async function applyAction(env, idToken, oauth2Token, action, uidMap) {
     const { type, username, hours, reason } = action;
     const result = { type, username, reason: (reason || '').substring(0, 200), status: 'pending' };
 
-    // Resolve UID — use gathered map first, fall back to in-memory search of shared usersPublic
-    let entry = uidMap[username.toLowerCase()];
-    let uid = entry?.uid || null;
-
-    if (!uid) {
-        console.log(`[Automod] UID not in map for "${username}", searching users_public...`);
-        uid = lookupUid(usersPublic, username);
-    }
+    // Resolve UID from the map built during content gathering
+    const entry = uidMap[username.toLowerCase()];
+    const uid = entry?.uid || null;
 
     if (!uid) {
         console.warn(`[Automod] Could not resolve UID for "${username}" — skipping`);
@@ -729,19 +733,6 @@ async function applyAction(env, idToken, oauth2Token, action, uidMap, usersPubli
     }
 
     return result;
-}
-
-// Search the shared usersPublic map — no extra subrequest needed
-function lookupUid(usersPublic, username) {
-    if (!usersPublic || typeof usersPublic !== 'object') return null;
-    const target = username.toLowerCase();
-    for (const [uid, u] of Object.entries(usersPublic)) {
-        if (!u) continue;
-        const name = (u.displayName || u.username || '').toLowerCase();
-        const email = (u.email || '').toLowerCase();
-        if (name === target || email === target || email.startsWith(target + '@')) return uid;
-    }
-    return null;
 }
 
 // ── Timeout (no strike) ───────────────────────────────────────────────────────
