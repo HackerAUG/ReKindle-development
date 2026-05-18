@@ -249,12 +249,21 @@ async function resolveUser() {
 
 // --- SCANNING ---
 async function scanKindleChatRTDB() {
-    console.log(`Scanning KindleChat (RTDB) for user='${targetUsername}'...`);
+    console.log(`Scanning KindleChat (RTDB) for user='${targetUsername}' / uid='${targetUid}'...`);
     const ref = rtdb.ref('kindlechat/messages');
-    const snap = await ref.orderByChild('user').equalTo(targetUsername).once('value');
 
-    if (snap.exists()) {
+    // Messages may use old-style 'user' (email handle) or new-style 'uid' (Firebase UID)
+    const queries = [];
+    if (targetUsername) queries.push(ref.orderByChild('user').equalTo(targetUsername).once('value'));
+    if (targetUid)      queries.push(ref.orderByChild('uid').equalTo(targetUid).once('value'));
+
+    const snaps = await Promise.all(queries);
+    const seen = new Set();
+    snaps.forEach(snap => {
+        if (!snap.exists()) return;
         snap.forEach(child => {
+            if (seen.has(child.key)) return;
+            seen.add(child.key);
             deletionTasks.push({
                 type: 'KindleChat (General)',
                 id: child.key,
@@ -262,7 +271,7 @@ async function scanKindleChatRTDB() {
                 action: () => child.ref.remove()
             });
         });
-    }
+    });
 }
 
 async function scanKindleChatFirestore() {
@@ -275,18 +284,28 @@ async function scanKindleChatFirestore() {
         console.log(`Found ${roomsSnap.size} rooms to scan.`);
 
         for (const roomDoc of roomsSnap.docs) {
-            const messagesSnap = await roomDoc.ref.collection('messages')
-                .where('user', '==', targetUsername)
-                .get();
-
-            messagesSnap.forEach(doc => {
+            const seen = new Set();
+            const addMsg = doc => {
+                if (seen.has(doc.id)) return;
+                seen.add(doc.id);
                 deletionTasks.push({
                     type: `KindleChat (DM/Room: ${roomDoc.id})`,
                     id: doc.id,
                     summary: (doc.data().text || '').substring(0, 50),
                     action: () => doc.ref.delete()
                 });
-            });
+            };
+
+            // Old-style messages stored by email handle
+            if (targetUsername) {
+                const byHandle = await roomDoc.ref.collection('messages').where('user', '==', targetUsername).get();
+                byHandle.forEach(addMsg);
+            }
+            // New-style messages stored by UID
+            if (targetUid) {
+                const byUid = await roomDoc.ref.collection('messages').where('uid', '==', targetUid).get();
+                byUid.forEach(addMsg);
+            }
         }
     } catch (e) {
         console.error("Error scanning Firestore rooms:", e);

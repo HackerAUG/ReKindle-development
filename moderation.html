@@ -1406,13 +1406,20 @@
                     .once('value');
 
                 var chatMessages = [];
+                var chatUidsToResolve = new Set();
                 chatSnap.forEach(function(child) {
                     var msg = child.val();
                     if (msg && msg.timestamp >= cutoff) {
-                        if (filterUser && msg.user !== filterUser.emailHandle) return;
-                        chatMessages.push({ ts: msg.timestamp, user: msg.user || '?', text: msg.text || '' });
+                        if (filterUser) {
+                            var matchesHandle = msg.user && msg.user === filterUser.emailHandle;
+                            var matchesUid = msg.uid && msg.uid === filterUser.uid;
+                            if (!matchesHandle && !matchesUid) return;
+                        }
+                        if (!msg.user && msg.uid) chatUidsToResolve.add(msg.uid);
+                        chatMessages.push({ ts: msg.timestamp, user: msg.user || null, uid: msg.uid || null, text: msg.text || '' });
                     }
                 });
+                await Promise.all(Array.from(chatUidsToResolve).map(function(uid) { return resolveUid(uid); }));
                 chatMessages.sort(function(a,b){ return a.ts - b.ts; });
                 chatCount = chatMessages.length;
 
@@ -1421,7 +1428,8 @@
                     lines.push('(no messages in this period)');
                 } else {
                     chatMessages.forEach(function(m) {
-                        lines.push('[' + formatDate(m.ts) + '] ' + m.user + ': ' + m.text);
+                        var displayName = m.user || (m.uid ? (uidNameCache[m.uid] || m.uid.substring(0, 8)) : '?');
+                        lines.push('[' + formatDate(m.ts) + '] ' + displayName + ': ' + m.text);
                     });
                 }
                 lines.push('');
@@ -2607,33 +2615,49 @@
             var tasks = dryRun ? [] : adminCleanupTasks;
 
             if (dryRun) {
-                // 1. KindleChat RTDB
-                if (u.emailHandle) {
-                    log('Scanning KindleChat (RTDB)...');
-                    var chatSnap = await rtdb.ref('kindlechat/messages').orderByChild('user').equalTo(u.emailHandle).once('value');
+                // 1. KindleChat RTDB — query both old (user) and new (uid) message formats
+                log('Scanning KindleChat (RTDB)...');
+                try {
+                    var chatQueries = [];
+                    if (u.emailHandle) chatQueries.push(rtdb.ref('kindlechat/messages').orderByChild('user').equalTo(u.emailHandle).once('value'));
+                    chatQueries.push(rtdb.ref('kindlechat/messages').orderByChild('uid').equalTo(u.uid).once('value'));
+                    var chatSnaps = await Promise.all(chatQueries);
                     var chatCount = 0;
-                    chatSnap.forEach(function(child) {
-                        chatCount++;
-                        tasks.push({ type: 'KindleChat', key: child.key, rtdbRef: child.ref });
-                        log('  [chat] ' + (child.val().text || '').substring(0, 80));
+                    var seenChatKeys = new Set();
+                    chatSnaps.forEach(function(snap) {
+                        snap.forEach(function(child) {
+                            if (seenChatKeys.has(child.key)) return;
+                            seenChatKeys.add(child.key);
+                            chatCount++;
+                            tasks.push({ type: 'KindleChat', key: child.key, rtdbRef: child.ref });
+                            log('  [chat] ' + (child.val().text || '').substring(0, 80));
+                        });
                     });
                     log('  ->' + chatCount + ' message(s)');
-                    log('');
+                } catch (e) {
+                    log('  (RTDB scan error: ' + (e.message || e) + ')');
                 }
+                log('');
 
-                // 2. KindleChat Firestore DMs
+                // 2. KindleChat Firestore DMs — rooms still keyed by handle; messages use uid (new) or user (old)
                 if (u.emailHandle) {
                     log('Scanning KindleChat (Firestore DMs)...');
                     try {
                         var roomsSnap = await firestore.collection('rooms').where('participants', 'array-contains', u.emailHandle).get();
                         var dmCount = 0;
                         for (var roomDoc of roomsSnap.docs) {
-                            var msgsSnap = await roomDoc.ref.collection('messages').where('user', '==', u.emailHandle).get();
-                            msgsSnap.forEach(function(doc) {
+                            var seenDmKeys = new Set();
+                            var addDmMsg = function(doc) {
+                                if (seenDmKeys.has(doc.id)) return;
+                                seenDmKeys.add(doc.id);
                                 dmCount++;
                                 tasks.push({ type: 'KindleChat DM', key: doc.id, fsRef: doc.ref });
                                 log('  [dm/' + roomDoc.id + '] ' + (doc.data().text || '').substring(0, 80));
-                            });
+                            };
+                            var dmByHandle = await roomDoc.ref.collection('messages').where('user', '==', u.emailHandle).get();
+                            dmByHandle.forEach(addDmMsg);
+                            var dmByUid = await roomDoc.ref.collection('messages').where('uid', '==', u.uid).get();
+                            dmByUid.forEach(addDmMsg);
                         }
                         log('  ->' + dmCount + ' DM message(s)');
                     } catch (e) {
