@@ -17,10 +17,15 @@ export async function onRequest(context) {
     }
 
     // Fetch from Reddit
-    // Reddit needs a proper User-Agent to not block scripts
+    // Reddit aggressively blocks non-browser user agents and cloud IPs.
     const response = await fetch(targetUrl, {
         headers: {
-            "User-Agent": "ReKindle-Proxy/1.0"
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Accept-Encoding": "gzip",
+            "DNT": "1",
+            "Upgrade-Insecure-Requests": "1"
         }
     });
 
