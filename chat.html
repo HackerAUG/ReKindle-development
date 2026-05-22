@@ -807,8 +807,13 @@
                 }
                 updateMessageCounter();
             } catch (e) {
-                console.error("Error loading message count:", e);
-                dailyMessageCount = -1; // Error marker
+                if (e.code === 'permission-denied') {
+                    console.warn("Permission denied loading message count; treating as 0");
+                    dailyMessageCount = 0;
+                } else {
+                    console.error("Error loading message count:", e);
+                    dailyMessageCount = -1; // Error marker
+                }
                 updateMessageCounter();
             }
         }
@@ -929,9 +934,6 @@
                                             : new Date(data.proExpiresAt).getTime();
                                     }
 
-                                    // Always load usage for logged in users
-                                    loadDailyMessageCount();
-
                                     // UPDATE CACHE
                                     if (expires > now) {
                                         localStorage.setItem('rekindle_pro_expiry', expires.toString());
@@ -942,8 +944,6 @@
                                     if (expires > now) {
                                         // UNLOCKED - Pro
                                         isPro = true;
-                                        // Load daily message count for the user
-                                        loadDailyMessageCount();
                                         overlay.style.display = 'none';
                                     } else {
                                         // LOCKED - Expired
@@ -951,6 +951,9 @@
                                         status.innerText = expires > 0 ? "Subscription expired." : "Subscription required.";
                                         overlay.style.display = 'flex';
                                     }
+
+                                    // Load daily message count for the user
+                                    loadDailyMessageCount();
                                 } else {
                                     // User exists but no data? Locked.
                                     isPro = false;
