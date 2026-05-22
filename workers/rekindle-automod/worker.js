@@ -100,9 +100,9 @@ export default {
                 const r2 = await fetch(`${RTDB_BASE}/neighbourhood_posts.json?limitToLast=1&orderBy=%22%24key%22&auth=${idToken}`);
                 out.neighbourhoodWithIdToken = { status: r2.status, body: (await r2.text()).substring(0, 300) };
 
-                // Test 3: write-protected path (social_timeouts) — read only
-                const r3 = await fetch(`${RTDB_BASE}/social_timeouts.json?shallow=true&auth=${idToken}`);
-                out.timeoutsRead = { status: r3.status, body: (await r3.text()).substring(0, 200) };
+                // Test 3: write-protected path (mod_actions) — read only
+                const r3 = await fetch(`${RTDB_BASE}/mod_actions.json?shallow=true&auth=${idToken}`);
+                out.modActionsRead = { status: r3.status, body: (await r3.text()).substring(0, 200) };
             } catch (e) {
                 out.idTokenOk = false;
                 out.error = e.message;
@@ -694,13 +694,10 @@ async function applyAction(env, idToken, oauth2Token, action, uidMap) {
                 console.log(`[Automod] Nuke-strike confirmed and recorded for @${username}: ${strikeCount}/${STRIKE_LIMIT}`);
 
                 if (!limitReached) {
-                    const timeoutHours = strikeCount >= 2 ? 2 : 1;
                     if (DRY_RUN) {
-                        console.log(`[Automod DRY RUN] Would timeout ${timeoutHours}h for strike ${strikeCount}: ${username}`);
-                    } else {
-                        await doTimeout(idToken, uid, timeoutHours, `Strike ${strikeCount}/${STRIKE_LIMIT}: ${reason}`);
+                        console.log(`[Automod DRY RUN] Would record strike ${strikeCount}: ${username}`);
                     }
-                    result.status = `nuke_strike_${strikeCount}_of_${STRIKE_LIMIT}_timeout_${timeoutHours}h`;
+                    result.status = `nuke_strike_${strikeCount}_of_${STRIKE_LIMIT}`;
                 } else {
                     // Strike limit reached — execute the ban
                     if (DRY_RUN) {
@@ -716,11 +713,11 @@ async function applyAction(env, idToken, oauth2Token, action, uidMap) {
         } else {
             const h = Math.max(1, Math.min(hours || 24, 168));
             if (DRY_RUN) {
-                result.status = `dry_run_would_timeout_${h}h`;
-                console.log(`[Automod DRY RUN] Would timeout ${h}h: ${username} (${uid}) — ${reason}`);
+                result.status = `dry_run_skipped_timeout`;
+                console.log(`[Automod DRY RUN] Skipped timeout ${h}h (deprecated): ${username} (${uid}) — ${reason}`);
             } else {
-                await doTimeout(idToken, uid, h, reason || 'Automod');
-                result.status = `timed_out_${h}h`;
+                console.log(`[Automod] Timeout action deprecated, skipping: ${username} (${uid})`);
+                result.status = `skipped_timeout_deprecated`;
             }
         }
         console.log(`[Automod] ${result.status}: ${username} (${uid}) — ${reason}`);
@@ -733,23 +730,6 @@ async function applyAction(env, idToken, oauth2Token, action, uidMap) {
     }
 
     return result;
-}
-
-// ── Timeout (no strike) ───────────────────────────────────────────────────────
-// Applies a social timeout only — does not record any strikes.
-
-async function doTimeout(idToken, uid, hours, reason) {
-    const existing = await rtdbGet(idToken, `social_timeouts/${uid}`);
-    if (existing && typeof existing.durationHours === 'number' && existing.durationHours >= hours) {
-        console.log(`[Automod] ${uid} already has ${existing.durationHours}h timeout — not shortening`);
-        return;
-    }
-    await rtdbPut(idToken, `social_timeouts/${uid}`, {
-        reason: `[Automod] ${reason}`,
-        durationHours: hours,
-        createdAt: { '.sv': 'timestamp' },
-    });
-    await rtdbDelete(idToken, `users_private/${uid}/timeout_seen`);
 }
 
 // ── Nuke-strike recorder ──────────────────────────────────────────────────────
@@ -785,15 +765,7 @@ async function recordNukeStrike(idToken, uid, reason) {
 async function doFullNuke(idToken, oauth2Token, uid, username, reason, ipBan = false) {
     console.log(`[Automod] Executing full nuke on ${uid} (${username}), IP ban: ${ipBan}`);
 
-    // 1. Permanent social timeout
-    await rtdbPut(idToken, `social_timeouts/${uid}`, {
-        reason: `[Automod] ${reason}`,
-        durationHours: 999999,
-        createdAt: { '.sv': 'timestamp' },
-    });
-    await rtdbDelete(idToken, `users_private/${uid}/timeout_seen`);
-
-    // 2. IP ban — only for egregious single-incident cases
+    // 1. IP ban — only for egregious single-incident cases
     if (ipBan) {
         try {
             const ip = await rtdbGet(idToken, `users_private/${uid}/ipAddress`);

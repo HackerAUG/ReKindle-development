@@ -857,22 +857,6 @@
             <hr class="divider">
 
             <div class="admin-section">
-                <div class="admin-section-title">Timeout</div>
-                <div class="admin-action-row">
-                    <input type="number" id="admin-timeout-amount" value="1" min="1" style="width:60px;">
-                    <select id="admin-timeout-unit">
-                        <option value="minutes">minutes</option>
-                        <option value="hours" selected>hours</option>
-                    </select>
-                    <input type="text" id="admin-timeout-reason" placeholder="reason (required)" style="flex:1;">
-                    <button class="btn-primary" onclick="adminSetTimeout()">Set Timeout</button>
-                    <button onclick="adminClearTimeout()">Clear Timeout</button>
-                </div>
-            </div>
-
-            <hr class="divider">
-
-            <div class="admin-section">
                 <div class="admin-section-title">Message Cleanup</div>
                 <div class="admin-action-row">
                     <button onclick="adminCleanupMessages(true)">Scan (Dry Run)</button>
@@ -912,13 +896,6 @@
             <button class="btn-primary" onclick="fetchModActions()">Refresh</button>
             <button class="clear-log-btn" id="clear-log-btn" onclick="clearModActionsLog()">Clear Log</button>
         </div>
-
-        <div id="active-timeouts-section">
-            <div style="font-size:12px;font-weight:bold;margin-bottom:6px;">Active Timeouts</div>
-            <div id="active-timeouts-list"><div class="no-data">Loading...</div></div>
-        </div>
-
-        <hr class="divider">
 
         <div>
             <div style="font-size:12px;font-weight:bold;margin-bottom:6px;">Action Log</div>
@@ -1115,7 +1092,6 @@
         fetchAutomodLog();
         fetchBannedIps();
         fetchModActions();
-        fetchActiveTimeouts();
     });
 
     function setStatus(msg) {
@@ -1623,14 +1599,12 @@
 
         var limit = parseInt(document.getElementById('log-limit').value, 10);
 
-        // Fetch log, strikes, and active timeouts in parallel
+        // Fetch log and strikes in parallel
         try {
-            var [logSnap, strikesSnap, socialTimeoutsSnap] = await Promise.all([
+            var [logSnap, strikesSnap] = await Promise.all([
                 rtdb.ref('automod_log').orderByKey().limitToLast(limit).once('value'),
-                rtdb.ref('automod_strikes').once('value'),
-                rtdb.ref('social_timeouts').once('value')
+                rtdb.ref('automod_strikes').once('value')
             ]);
-            var socialTimeoutsData = socialTimeoutsSnap.val() || {};
 
             // ── Strike Records ─────────────────────────────────────────────────
             var strikesData = strikesSnap.val() || {};
@@ -1642,16 +1616,10 @@
             if (strikeUids.length === 0) {
                 strikesGrid.innerHTML = '<div class="no-data">No active strike records.</div>';
             } else {
-                // Resolve usernames and timeout_seen for users with social timeouts in parallel
+                // Resolve usernames in parallel
                 var nameMap = {};
-                var seenMap = {};
-                var uidsWithTimeout = strikeUids.filter(function(uid) { return socialTimeoutsData[uid]; });
                 await Promise.all(
-                    strikeUids.map(async function(uid) { nameMap[uid] = await resolveUid(uid); }).concat(
-                    uidsWithTimeout.map(async function(uid) {
-                        var snap = await rtdb.ref('users_private/' + uid + '/timeout_seen').once('value');
-                        seenMap[uid] = snap.val();
-                    }))
+                    strikeUids.map(async function(uid) { nameMap[uid] = await resolveUid(uid); })
                 );
 
                 // Sort by strike count desc, then last strike ts desc
@@ -1667,26 +1635,14 @@
                     var s = strikesData[uid];
                     var atLimit = s.count >= STRIKE_LIMIT;
                     var recentStrikes = (s.strikes || []).filter(function(st) { return st.ts >= now - windowMs; });
-                    var socialTimeout = socialTimeoutsData[uid];
-                    var timeoutLabel;
-                    if (socialTimeout) {
-                        var durationMs = socialTimeout.durationHours * 3600000;
-                        var seen = seenMap[uid];
-                        var isExpired = seen && (seen + durationMs <= now);
-                        timeoutLabel = socialTimeout.durationHours + 'h timeout' + (isExpired ? ' (expired)' : '');
-                    } else if (atLimit) {
-                        timeoutLabel = 'banned';
-                    } else {
-                        timeoutLabel = 'no timeout';
-                    }
+                    var statusLabel = atLimit ? 'banned' : 'active';
                     var strikeDetails = recentStrikes.map(function(st) {
-                        var duration = st.hours ? st.hours + 'h timeout' : 'no timeout';
-                        return '[' + formatDate(st.ts) + '] ' + duration + ' — ' + escapeHtml(st.reason || '');
+                        return '[' + formatDate(st.ts) + '] ' + escapeHtml(st.reason || '');
                     }).join(' | ');
                     html += '<div class="strike-row">'
                         + '<span class="strike-user">' + escapeHtml(nameMap[uid] || uid) + '</span>'
                         + '<span class="strike-count' + (atLimit ? ' at-limit' : '') + '">' + s.count + '/' + STRIKE_LIMIT + '</span>'
-                        + '<span class="strike-timeout">' + escapeHtml(timeoutLabel) + '</span>'
+                        + '<span class="strike-timeout">' + escapeHtml(statusLabel) + '</span>'
                         + '<span class="strike-history">Last: ' + formatDate(s.lastStrikeAt) + ' &nbsp;|&nbsp; ' + strikeDetails + '</span>'
                         + '</div>';
                 });
@@ -1880,10 +1836,7 @@
             var user = auth.currentUser;
             var updates = {};
 
-            if (entry.type === 'timeout') {
-                updates['social_timeouts/' + entry.targetUid] = null;
-                updates['users_private/' + entry.targetUid + '/timeout_seen'] = null;
-            } else if (entry.savedPath && entry.savedData) {
+            if (entry.savedPath && entry.savedData) {
                 updates[entry.savedPath] = entry.savedData;
             }
 
@@ -1901,143 +1854,6 @@
             btn.disabled = false;
             btn.textContent = 'Undo';
             await showAlert('Undo failed: ' + (err.message || err));
-        }
-    }
-
-    async function fetchActiveTimeouts() {
-        var listEl = document.getElementById('active-timeouts-list');
-        try {
-            var snap = await rtdb.ref('social_timeouts').once('value');
-            var data = snap.val() || {};
-            var uids = Object.keys(data);
-
-            if (uids.length === 0) {
-                listEl.innerHTML = '<div class="no-data">No active timeouts.</div>';
-                return;
-            }
-
-            var now = Date.now();
-
-            // Fetch in parallel: timeout_seen for each uid, strike records, and banned_ips
-            var [seenSnaps, strikeSnaps, bannedIpsSnap] = await Promise.all([
-                Promise.all(uids.map(function(uid) {
-                    return rtdb.ref('users_private/' + uid + '/timeout_seen').once('value');
-                })),
-                Promise.all(uids.map(function(uid) {
-                    return rtdb.ref('automod_strikes/' + uid).once('value');
-                })),
-                rtdb.ref('banned_ips').once('value')
-            ]);
-
-            // Build set of banned UIDs from both legacy bannedUid and the newer bannedUsers map.
-            var bannedByIp = new Set();
-            var bannedIpsData = bannedIpsSnap.val() || {};
-            Object.values(bannedIpsData).forEach(function(entry) {
-                collectBannedUserUids(entry).forEach(function(uid) {
-                    bannedByIp.add(uid);
-                });
-            });
-
-            // Build annotated list
-            var annotated = uids.map(function(uid, i) {
-                var t = data[uid] || {};
-                var timeoutSeen = seenSnaps[i].val();
-                var durationMs = t.durationHours ? t.durationHours * 3600000 : null;
-                var strikes = strikeSnaps[i].val();
-
-                // Banned = IP-banned via nuke_user.js OR automod strike limit reached
-                var isBanned = bannedByIp.has(uid) || (strikes && strikes.count >= STRIKE_LIMIT);
-
-                var expiresAt = null;
-                var status;
-                if (timeoutSeen && durationMs) {
-                    expiresAt = timeoutSeen + durationMs;
-                    status = expiresAt > now ? 'active' : 'expired';
-                } else if (!timeoutSeen) {
-                    status = 'pending';
-                } else {
-                    status = 'active';
-                }
-
-                return { uid: uid, t: t, timeoutSeen: timeoutSeen, expiresAt: expiresAt, status: status, isBanned: isBanned };
-            });
-
-            // Only show non-expired entries
-            var active = annotated.filter(function(e) { return e.status !== 'expired'; });
-
-            if (active.length === 0) {
-                listEl.innerHTML = '<div class="no-data">No active timeouts.</div>';
-                return;
-            }
-
-            // Resolve display names in parallel
-            var allUids = new Set();
-            active.forEach(function(e) {
-                allUids.add(e.uid);
-                if (e.t.moderatedBy) allUids.add(e.t.moderatedBy);
-            });
-            await Promise.all(Array.from(allUids).map(function(uid) { return resolveUid(uid); }));
-
-            // Sort: pending first, then soonest-expiring; banned always at top within each group
-            active.sort(function(a, b) {
-                if (a.isBanned !== b.isBanned) return a.isBanned ? -1 : 1;
-                if (a.status === 'pending' && b.status !== 'pending') return -1;
-                if (b.status === 'pending' && a.status !== 'pending') return 1;
-                if (a.expiresAt === null) return 1;
-                if (b.expiresAt === null) return -1;
-                return a.expiresAt - b.expiresAt;
-            });
-
-            var html = '';
-            active.forEach(function(e) {
-                var uid = e.uid, t = e.t;
-                var timeRemaining;
-                if (e.status === 'pending') {
-                    timeRemaining = 'pending — user hasn\'t opened app yet';
-                } else if (e.expiresAt !== null) {
-                    var remaining = e.expiresAt - now;
-                    var h = Math.floor(remaining / 3600000);
-                    var m = Math.floor((remaining % 3600000) / 60000);
-                    timeRemaining = h > 0 ? (h + 'h ' + m + 'm remaining') : (m + 'm remaining');
-                } else {
-                    timeRemaining = 'active';
-                }
-                var userName = uidNameCache[uid] || uid;
-                var modName = t.moderatedBy ? (uidNameCache[t.moderatedBy] || t.moderatedBy) : '?';
-                var userStyle = e.isBanned ? 'color:#c00;font-weight:bold;' : '';
-                var bannedBadge = e.isBanned ? ' <span class="badge badge-nuke">BANNED</span>' : '';
-
-                html += '<div class="timeout-row" id="tr-' + uid + '">'
-                    + '<span class="timeout-user" style="' + userStyle + '">' + escapeHtml(userName) + bannedBadge + '</span>'
-                    + '<span class="timeout-remaining">' + escapeHtml(timeRemaining) + '</span>'
-                    + '<span class="timeout-reason">' + escapeHtml(t.reason || '(no reason given)') + '</span>'
-                    + '<span style="color:#666;font-size:10px;">by ' + escapeHtml(modName) + '</span>'
-                    + '<button class="lift-btn" onclick="liftTimeout(\'' + uid + '\', this)">Lift</button>'
-                    + '</div>';
-            });
-            listEl.innerHTML = html;
-        } catch (err) {
-            listEl.innerHTML = '<div class="no-data">Error: ' + escapeHtml(err.message || String(err)) + '</div>';
-        }
-    }
-
-    async function liftTimeout(uid, btn) {
-        if (!await showConfirm('Lift timeout for ' + (uidNameCache[uid] || uid) + '?')) return;
-        btn.disabled = true;
-        try {
-            var updates = {};
-            updates['social_timeouts/' + uid] = null;
-            updates['users_private/' + uid + '/timeout_seen'] = null;
-            await rtdb.ref().update(updates);
-            var row = document.getElementById('tr-' + uid);
-            if (row) row.remove();
-            var listEl = document.getElementById('active-timeouts-list');
-            if (!listEl.querySelector('.timeout-row')) {
-                listEl.innerHTML = '<div class="no-data">No active timeouts.</div>';
-            }
-        } catch (err) {
-            btn.disabled = false;
-            await showAlert('Failed to lift timeout: ' + (err.message || err));
         }
     }
 
@@ -2228,7 +2044,6 @@
                 rtdb.ref('users_private/' + uid + '/ipAddress').once('value'),
                 firestore.collection('users').doc(uid).get(),
                 rtdb.ref('moderators/' + uid).once('value'),
-                rtdb.ref('social_timeouts/' + uid).once('value'),
                 firebase.functions().httpsCallable('getUserAuthStatus')({ uid }).catch(function(err) { return { data: { error: err.message || String(err) } }; })
             ]);
 
@@ -2240,9 +2055,8 @@
             var subscriptionType = (proData && proData.subscriptionType) || '';
             var stripeCustomerId = (proData && proData.stripeCustomerId) || null;
             var isMod = results[2].exists();
-            var timeoutData = results[3].val() || null;
 
-            var authStatusResult = results[4];
+            var authStatusResult = results[3];
             var isFirebaseDisabled = false;
             var authStatusError = null;
             if (authStatusResult.data) {
@@ -2260,7 +2074,7 @@
                 isIpBanned = ipBanSnap.exists();
             }
 
-            adminTargetUser = { uid, displayName, email, emailHandle, ip, isIpBanned, isPro, proExpiresAt, subscriptionType, stripeCustomerId, isMod, timeoutData, isFirebaseDisabled, authStatusError };
+            adminTargetUser = { uid, displayName, email, emailHandle, ip, isIpBanned, isPro, proExpiresAt, subscriptionType, stripeCustomerId, isMod, isFirebaseDisabled, authStatusError };
 
             renderAdminUserInfo();
             setAdminStatus('Ready. Select an action below.');
@@ -2279,9 +2093,6 @@
             ? ('Yes — ' + (u.subscriptionType || 'manual') + (u.proExpiresAt ? ', until ' + formatDate(u.proExpiresAt.getTime()) : ''))
             : 'No';
         var modLabel = u.isMod ? 'Yes' : 'No';
-        var timeoutLabel = u.timeoutData
-            ? (u.timeoutData.durationHours + 'h — ' + (u.timeoutData.reason || '(no reason)'))
-            : 'None';
         var ipLabel = u.ip || '(not recorded)';
         var firebaseLabel = u.authStatusError ? 'Error checking status' : (u.isFirebaseDisabled ? 'Disabled (banned)' : 'Active');
 
@@ -2293,7 +2104,6 @@
             + '<div class="admin-user-badges">'
             + '<span class="admin-badge' + (u.isPro ? ' admin-badge-pro' : '') + '">Pro: ' + escapeHtml(proLabel) + '</span>'
             + '<span class="admin-badge' + (u.isMod ? ' admin-badge-mod' : '') + '">Mod: ' + escapeHtml(modLabel) + '</span>'
-            + '<span class="admin-badge' + (u.timeoutData ? ' admin-badge-timeout' : '') + '">Timeout: ' + escapeHtml(timeoutLabel) + '</span>'
             + '<span class="admin-badge' + (u.ip ? (u.isIpBanned ? ' admin-badge-ip' : ' admin-badge-ip-ok') : '') + '">IP: ' + escapeHtml(ipLabel) + '</span>'
             + '<span class="admin-badge' + (u.isFirebaseDisabled ? ' admin-badge-banned' : ' admin-badge-active') + '">Firebase: ' + escapeHtml(firebaseLabel) + '</span>'
             + '</div>';
@@ -2494,89 +2304,6 @@
         } catch (err) {
             console.error(err);
             setAdminStatus('Error revoking Moderator: ' + (err.message || err), true);
-        }
-    }
-
-    async function adminSetTimeout() {
-        var u = adminTargetUser;
-        if (!u) return;
-
-        var amount = parseFloat(document.getElementById('admin-timeout-amount').value);
-        var unit = document.getElementById('admin-timeout-unit').value;
-        var reason = document.getElementById('admin-timeout-reason').value.trim();
-
-        if (isNaN(amount) || amount <= 0) { setAdminStatus('Enter a valid timeout duration.', true); return; }
-        if (!reason) { setAdminStatus('A reason is required for the timeout.', true); return; }
-
-        var hours = unit === 'minutes' ? amount / 60 : amount;
-        var humanDuration = amount + ' ' + unit;
-
-        if (!await showConfirm('Timeout ' + escapeHtml(u.emailHandle || u.uid) + ' for ' + humanDuration + '?\nReason: ' + reason)) return;
-
-        setAdminStatus('Setting timeout...');
-        try {
-            var logKey = rtdb.ref('mod_actions').push().key;
-            var updates = {};
-            updates['social_timeouts/' + u.uid] = {
-                reason: reason,
-                durationHours: hours,
-                moderatedBy: currentUser.uid,
-                createdAt: firebase.database.ServerValue.TIMESTAMP
-            };
-            updates['users_private/' + u.uid + '/timeout_seen'] = null;
-            updates['mod_actions/' + logKey] = {
-                type: 'timeout',
-                moderatorUid: currentUser.uid,
-                moderatorName: (currentUser.email ? currentUser.email.split('@')[0] : '') || currentUser.displayName || currentUser.uid,
-                targetUid: u.uid,
-                targetName: u.emailHandle || u.uid,
-                durationHours: hours,
-                reason: reason,
-                createdAt: firebase.database.ServerValue.TIMESTAMP,
-                undone: false
-            };
-            await rtdb.ref().update(updates);
-            adminTargetUser.timeoutData = { reason: reason, durationHours: hours, moderatedBy: currentUser.uid };
-            renderAdminUserInfo();
-            setAdminStatus('Timeout set: ' + escapeHtml(u.emailHandle || u.uid) + ' for ' + humanDuration + '.');
-            fetchActiveTimeouts();
-        } catch (err) {
-            console.error(err);
-            setAdminStatus('Error setting timeout: ' + (err.message || err), true);
-        }
-    }
-
-    async function adminClearTimeout() {
-        var u = adminTargetUser;
-        if (!u) return;
-        if (!u.timeoutData) { setAdminStatus('No active timeout for this user.'); return; }
-        if (!await showConfirm('Clear timeout for ' + escapeHtml(u.emailHandle || u.uid) + '?')) return;
-
-        setAdminStatus('Clearing timeout...');
-        try {
-            var logKey = rtdb.ref('mod_actions').push().key;
-            var updates = {};
-            updates['social_timeouts/' + u.uid] = null;
-            updates['users_private/' + u.uid + '/timeout_seen'] = null;
-            updates['mod_actions/' + logKey] = {
-                type: 'timeout_lift',
-                moderatorUid: currentUser.uid,
-                moderatorName: (currentUser.email ? currentUser.email.split('@')[0] : '') || currentUser.displayName || currentUser.uid,
-                targetUid: u.uid,
-                targetName: u.emailHandle || u.uid,
-                durationHours: 0,
-                reason: '(timeout removed)',
-                createdAt: firebase.database.ServerValue.TIMESTAMP,
-                undone: false
-            };
-            await rtdb.ref().update(updates);
-            adminTargetUser.timeoutData = null;
-            renderAdminUserInfo();
-            setAdminStatus('Timeout cleared for ' + escapeHtml(u.emailHandle || u.uid) + '.');
-            fetchActiveTimeouts();
-        } catch (err) {
-            console.error(err);
-            setAdminStatus('Error clearing timeout: ' + (err.message || err), true);
         }
     }
 

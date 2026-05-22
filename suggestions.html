@@ -534,7 +534,6 @@
     <script src="theme.js?v=17"></script>
     <script src="js/i18n.js"></script>
     <script src="js/custom-select.js"></script>
-    <script src="social-timeout.js"></script>
 </head>
 
 <body>
@@ -834,17 +833,15 @@
             // AUTH LISTENER
             auth.onAuthStateChanged(function (user) {
                 if (user) {
-                    checkSocialTimeout(rtdb, user.uid, function () {
-                        currentUser = user;
-                        // Check Pro Status
-                        isPro = (localStorage.getItem('rekindle_is_pro') !== 'false');
-                        if (currentUser.email === 'ukiyo@rekindle.ink') {
-                            isPro = true;
-                        }
+                    currentUser = user;
+                    // Check Pro Status
+                    isPro = (localStorage.getItem('rekindle_is_pro') !== 'false');
+                    if (currentUser.email === 'ukiyo@rekindle.ink') {
+                        isPro = true;
+                    }
 
-                        document.getElementById('login-overlay').style.display = 'none';
-                        fetchSupporters(loadSuggestions);
-                    });
+                    document.getElementById('login-overlay').style.display = 'none';
+                    fetchSupporters(loadSuggestions);
                 } else {
                     currentUser = null;
                     document.getElementById('login-overlay').style.display = 'flex';
