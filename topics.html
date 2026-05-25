@@ -1114,19 +1114,47 @@
                     loadTopicStates().then(function () {
                         // Load topics
                         var deepLinkChecked = false;
+
+                        function processTopicDoc(doc) {
+                            var data = doc.data();
+                            if (data.lastActive && typeof data.lastActive.toMillis === 'function') {
+                                data.lastActive = data.lastActive.toMillis();
+                            }
+                            if (data.timestamp && typeof data.timestamp.toMillis === 'function') {
+                                data.timestamp = data.timestamp.toMillis();
+                            }
+                            return Object.assign({ id: doc.id }, data);
+                        }
+
+                        function onTopicsReady() {
+                            renderSidebar();
+                            if (!deepLinkChecked) {
+                                deepLinkChecked = true;
+                                var params = new URLSearchParams(window.location.search);
+                                var tid = params.get('topic_id');
+                                if (tid && !currentTopicId) selectTopic(tid);
+                            }
+                        }
+
+                        // Eager one-time fetch so the sidebar isn't blank while the listener connects
+                        socialDb.collection('topics')
+                            .orderBy('lastActive', 'desc').limit(200)
+                            .get().then(function(snapshot) {
+                                allTopicsCache = [];
+                                snapshot.forEach(function(doc) {
+                                    allTopicsCache.push(processTopicDoc(doc));
+                                });
+                                onTopicsReady();
+                            }).catch(function(err) {
+                                console.error('Topics initial get error:', err);
+                            });
+
                         topicsListenerRef = socialDb.collection('topics')
                             .orderBy('lastActive', 'desc').limit(200)
                             .onSnapshot(function(snapshot) {
                                 allTopicsCache = [];
                                 snapshot.forEach(function(doc) {
-                                    var data = doc.data();
-                                    if (data.lastActive && typeof data.lastActive.toMillis === 'function') {
-                                        data.lastActive = data.lastActive.toMillis();
-                                    }
-                                    if (data.timestamp && typeof data.timestamp.toMillis === 'function') {
-                                        data.timestamp = data.timestamp.toMillis();
-                                    }
-                                    allTopicsCache.push(Object.assign({ id: doc.id }, data));
+                                    allTopicsCache.push(processTopicDoc(doc));
                                 });
                                 debouncedRenderSidebar();
                                 if (!deepLinkChecked) {
@@ -1570,12 +1598,38 @@
                 });
             }
 
-            // BATCHED LOADING (mirrors kindlechat general-channel pattern):
-            // - Live window: limitToLast(MESSAGES_INITIAL_LOAD) for onSnapshot
-            // - Pagination: scroll-to-top fetches MESSAGES_PER_BATCH older messages via .get()
             var liveCommentsQuery = socialDb.collection('topics').doc(id).collection('comments')
                 .orderBy('timestamp', 'asc').limitToLast(MESSAGES_INITIAL_LOAD);
 
+            // Eager one-time fetch so chat isn't blank while the listener connects
+            liveCommentsQuery.get().then(function(snapshot) {
+                if (commentsListener !== id) return;
+                snapshot.forEach(function(doc) {
+                    var data = doc.data();
+                    data.id = doc.id;
+
+                    if (data.timestamp && typeof data.timestamp.toMillis === 'function') {
+                        data.timestamp = data.timestamp.toMillis();
+                    }
+
+                    if (!data.timestamp) return;
+                    if (renderedCommentIds[doc.id]) return;
+                    renderedCommentIds[doc.id] = true;
+
+                    if (typeof data.timestamp === 'number') {
+                        if (oldestRenderedTs === null || data.timestamp < oldestRenderedTs) {
+                            oldestRenderedTs = data.timestamp;
+                        }
+                    }
+
+                    appendMessage(data);
+                });
+                historyEl.scrollTop = historyEl.scrollHeight;
+            }).catch(function(err) {
+                console.error('Comments initial get error:', err);
+            });
+
+            // Real-time listener for new/removed comments
             commentsUnsubscribe = liveCommentsQuery.onSnapshot(function(snapshot) {
                 if (commentsListener !== id) return; // stale event after topic switch
                 snapshot.docChanges().forEach(function(change) {
