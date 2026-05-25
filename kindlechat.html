@@ -938,6 +938,7 @@
     <script src="time.js"></script>
     <script src="theme.js?v=17"></script>
     <script src="js/i18n.js"></script>
+    <script src="js/age-verification.js"></script>
 
 </head>
 
@@ -1233,6 +1234,7 @@
 
         // TODO: START HERE - User must deploy cloudflare-worker.js and paste URL here
         var TRANSLATION_WORKER_URL = "https://rekindle-translate.timjarnott.workers.dev";
+        var MODERATION_WORKER_URL = "https://rekindle-moderate.timjarnott.workers.dev";
         // Example: "https://rekindle-chat-worker.timothyarnott.workers.dev"
         var currentRoomId = 'general';
         var isPro = false; // Pro Status
@@ -1354,10 +1356,13 @@
                     document.getElementById('active-input').style.display = 'flex';
                     document.getElementById('locked-input').style.display = 'none';
 
-                    // Authenticate with social project before loading social data
-                    var getSocialToken = firebase.functions().httpsCallable('getSocialToken');
-                    getSocialToken({}).then(function (result) {
-                        return socialAuth.signInWithCustomToken(result.data.token);
+                    // Age verification check (server-side enforced)
+                    ensureAgeVerified(auth, { closable: false }).then(function () {
+                        // Authenticate with social project before loading social data
+                        var getSocialToken = firebase.functions().httpsCallable('getSocialToken');
+                        return getSocialToken({}).then(function (result) {
+                            return socialAuth.signInWithCustomToken(result.data.token);
+                        });
                     }).then(function () {
                         // Username/avatar cache is populated lazily as messages render
                         // via rekindleFetchUserCard (reads tiny /user_cards records).
@@ -1370,8 +1375,15 @@
                             loadMessages();
                         });
                     }).catch(function (err) {
-                        console.error('Social auth failed:', err);
-                        showModal('Unable to connect to social backend. Please try again later.', false);
+                        console.error('Age verification or social auth failed:', err);
+                        document.getElementById('app-layout').style.display = 'none';
+                        var overlay = document.getElementById('guest-overlay');
+                        if (overlay) {
+                            overlay.style.display = 'flex';
+                            var msgEl = overlay.querySelector('.guest-message');
+                            if (msgEl) msgEl.textContent = err.message || 'Age verification required to access social features.';
+                        }
+                        showModal(err.message || 'Age verification required to access social features.', false);
                     });
                 } else {
                     currentUser = null;
@@ -2566,32 +2578,44 @@
                 markSendBusy();
                 setTimeout(function () { isSendingMessage = false; }, 3000); // failsafe unlock
 
-                // SPAM PROTECTION: Enforced server-side so it cannot be bypassed client-side
-                var postGeneralChatMessage = firebase.functions().httpsCallable('postGeneralChatMessage');
-                postGeneralChatMessage({ text: text })
-                    .then(function (result) {
-                        if (!result.data.allowed) {
-                            var waitSec = Math.ceil((result.data.retryAfter || 20000) / 1000);
-                            showModal('Please wait ' + waitSec + ' seconds before posting again.', false);
-                            resetSendState();
-                            return;
-                        }
-                        inputEl.value = '';
+                // SPAM PROTECTION + MODERATION: Enforced via Cloudflare Worker
+                var tokenSource = socialAuth.currentUser || currentUser;
+                tokenSource.getIdToken(true).then(function (token) {
+                    return fetch(MODERATION_WORKER_URL, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': 'Bearer ' + token
+                        },
+                        body: JSON.stringify({ type: 'kindlechat', text: text })
+                    }).then(function (resp) { return resp.json(); });
+                }).then(function (result) {
+                    if (result.allowed === false) {
+                        var waitSec = Math.ceil((result.retryAfter || 20000) / 1000);
+                        showModal('Please wait ' + waitSec + ' seconds before posting again.', false);
                         resetSendState();
-                        if (TRANSLATION_WORKER_URL) {
-                            fireTranslationRequest(currentUser.uid, text, result.data.key, 1);
-                        }
-                    })
-                    .catch(function (e) {
+                        return;
+                    }
+                    if (result.error) {
                         resetSendState();
-                        console.error('Error posting message:', e);
-                        var msg = e.message || 'Error sending message. Please try again.';
-                        if (msg.includes('PERMISSION_DENIED') || msg.includes('restricted')) {
-                            showModal('You are temporarily restricted from posting.', false);
-                        } else {
-                            showModal(msg, false);
-                        }
-                    });
+                        showModal(result.error, false);
+                        return;
+                    }
+                    inputEl.value = '';
+                    resetSendState();
+                    if (TRANSLATION_WORKER_URL) {
+                        fireTranslationRequest(currentUser.uid, text, result.key, 1);
+                    }
+                }).catch(function (e) {
+                    resetSendState();
+                    console.error('Error posting message:', e);
+                    var msg = e.message || 'Error sending message. Please try again.';
+                    if (msg.includes('PERMISSION_DENIED') || msg.includes('restricted')) {
+                        showModal('You are temporarily restricted from posting.', false);
+                    } else {
+                        showModal(msg, false);
+                    }
+                });
             });
         }
 

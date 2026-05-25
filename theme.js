@@ -603,7 +603,7 @@
             if (snap.val() === true) {
                 presenceRef.onDisconnect().remove().then(function () {
                     presenceRef.set(true);
-                }).catch(function () {});
+                }).catch(function () { });
             }
         });
     };
@@ -698,15 +698,15 @@
 
     // --- AVATAR CACHING HELPER ---
     window.rekindleAvatarCache = {};
-    window.rekindleFetchAvatarSeed = function(db, uid, callback) {
+    window.rekindleFetchAvatarSeed = function (db, uid, callback) {
         if (!uid) { callback('default'); return; }
         if (uid in window.rekindleAvatarCache) {
             callback(window.rekindleAvatarCache[uid]);
             return;
         }
         if (!db) { callback(uid); return; }
-        
-        db.ref('user_cards/' + uid).once('value').then(function(snap) {
+
+        db.ref('user_cards/' + uid).once('value').then(function (snap) {
             var seed = uid;
             if (snap.exists()) {
                 var card = snap.val();
@@ -714,7 +714,7 @@
             }
             window.rekindleAvatarCache[uid] = seed;
             callback(seed);
-        }).catch(function() {
+        }).catch(function () {
             callback(uid);
         });
     };
@@ -724,7 +724,7 @@
     window.rekindleCardCache = {};
     var _pendingCardFetches = {};
     var _CARD_TTL = 900000;
-    window.rekindleFetchUserCard = function(db, uid, callback) {
+    window.rekindleFetchUserCard = function (db, uid, callback) {
         if (!uid || !db) { callback(null); return; }
         var cached = window.rekindleCardCache[uid];
         if (cached && (Date.now() - cached.ts) < _CARD_TTL) {
@@ -736,19 +736,19 @@
             return;
         }
         _pendingCardFetches[uid] = [callback];
-        db.ref('user_cards/' + uid).once('value').then(function(snap) {
+        db.ref('user_cards/' + uid).once('value').then(function (snap) {
             var card = snap.exists() ? snap.val() : null;
             window.rekindleCardCache[uid] = { card: card, ts: Date.now() };
             var cbs = _pendingCardFetches[uid];
             delete _pendingCardFetches[uid];
-            cbs.forEach(function(cb) { cb(card); });
-        }).catch(function() {
+            cbs.forEach(function (cb) { cb(card); });
+        }).catch(function () {
             var cbs = _pendingCardFetches[uid];
             delete _pendingCardFetches[uid];
-            cbs.forEach(function(cb) { cb(null); });
+            cbs.forEach(function (cb) { cb(null); });
         });
     };
-    window.rekindleInvalidateUserCard = function(uid) {
+    window.rekindleInvalidateUserCard = function (uid) {
         if (uid) delete window.rekindleCardCache[uid];
     };
 

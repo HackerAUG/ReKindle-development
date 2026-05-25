@@ -1,5 +1,12 @@
 {
     "rules": {
+        "age_verification_sessions": {
+            ".read": false,
+            ".write": false,
+            "$sessionId": {
+                ".read": true
+            }
+        },
         "freewrite_sessions": {
             "$sessionId": {
                 ".read": "auth != null",

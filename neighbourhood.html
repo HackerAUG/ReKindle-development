@@ -637,6 +637,7 @@
     <script src="theme.js?v=17"></script>
     <script src="bad_words.js?v=4"></script>
     <script src="js/i18n.js"></script>
+    <script src="js/age-verification.js"></script>
 </head>
 
 <body>
@@ -1080,6 +1081,7 @@
         } catch (e) { console.warn('Firestore settings error:', e); }
         const socialDb = socialApp.firestore();
         const socialAuth = socialApp.auth();
+        const MODERATION_WORKER_URL = "https://rekindle-moderate.timjarnott.workers.dev";
 
         // Mock Kindle+ check (In real app, check claims or subscription status)
         // For now, let's treat everyone as potentially plus if they have the flag, 
@@ -1216,10 +1218,13 @@
                 // Initial Pro check from storage
                 isPlus = localStorage.getItem('rekindle_is_pro') !== 'false';
 
-                // Authenticate with social project before loading social data
-                const getSocialToken = firebase.functions().httpsCallable('getSocialToken');
-                getSocialToken({}).then((result) => {
-                    return socialAuth.signInWithCustomToken(result.data.token);
+                // Age verification check (server-side enforced)
+                ensureAgeVerified(auth, { closable: false }).then(() => {
+                    // Authenticate with social project before loading social data
+                    const getSocialToken = firebase.functions().httpsCallable('getSocialToken');
+                    return getSocialToken({}).then((result) => {
+                        return socialAuth.signInWithCustomToken(result.data.token);
+                    });
                 }).then(() => {
                     fetchSupporters().then(() => {
                         renderSuggestedInterests();
@@ -1238,7 +1243,14 @@
                         }
                     });
                 }).catch((err) => {
-                    console.error('Social auth failed:', err);
+                    console.error('Age verification or social auth failed:', err);
+                    document.querySelector('.window').style.display = 'none';
+                    var overlay = document.getElementById('login-overlay');
+                    if (overlay) {
+                        overlay.style.display = 'flex';
+                        var msgEl = overlay.querySelector('.login-message');
+                        if (msgEl) msgEl.textContent = err.message || 'Age verification required to access social features.';
+                    }
                 });
             } else {
                 document.getElementById('login-overlay').style.display = 'flex';
@@ -2763,16 +2775,29 @@
 
             input.disabled = true;
 
-            socialDb.collection('neighbourhood_posts').doc(postId).collection('comments').add({
-                uid: currentUser.uid,
-                text: text,
-                timestamp: firebase.firestore.FieldValue.serverTimestamp()
-            }).then(() => {
+            var tokenSource = socialAuth.currentUser || currentUser;
+            tokenSource.getIdToken(true).then(function (token) {
+                return fetch(MODERATION_WORKER_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + token
+                    },
+                    body: JSON.stringify({ type: 'neighbourhood_comment', postId: postId, text: text })
+                }).then(function (resp) { return resp.json(); });
+            }).then(function (result) {
+                if (result.error) {
+                    showAlertModal(result.error);
+                    input.disabled = false;
+                    return;
+                }
                 input.value = '';
                 input.disabled = false;
             }).catch(err => {
                 if (err && err.code === 'PERMISSION_DENIED') {
                     showAlertModal("You are temporarily restricted from posting.");
+                } else if (err && err.message && err.message.toLowerCase().indexOf('moderation') !== -1) {
+                    showAlertModal(err.message);
                 } else {
                     showAlertModal("Error posting comment: " + err.message);
                 }
@@ -2928,12 +2953,23 @@
             const btn = document.querySelector('button[onclick="submitPost()"]');
             if (btn) btn.disabled = true;
 
-            // Write directly to Firestore first (primary source of truth)
-            socialDb.collection('neighbourhood_posts').add({
-                uid: currentUser.uid,
-                text: text,
-                timestamp: firebase.firestore.FieldValue.serverTimestamp()
-            }).then(function (docRef) {
+            var tokenSource = socialAuth.currentUser || currentUser;
+            tokenSource.getIdToken(true).then(function (token) {
+                return fetch(MODERATION_WORKER_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + token
+                    },
+                    body: JSON.stringify({ type: 'neighbourhood_post', text: text })
+                }).then(function (resp) { return resp.json(); });
+            }).then(function (result) {
+                if (result.error) {
+                    if (btn) btn.disabled = false;
+                    showAlertModal(result.error);
+                    return;
+                }
+                var docRef = { id: result.id };
                 input.value = '';
                 if (btn) btn.disabled = false;
 
@@ -2964,6 +3000,8 @@
             }).catch(function (err) {
                 if (err && err.code === 'PERMISSION_DENIED') {
                     showAlertModal("You are temporarily restricted from posting.");
+                } else if (err && err.message && err.message.toLowerCase().indexOf('moderation') !== -1) {
+                    showAlertModal(err.message);
                 } else {
                     showAlertModal("Error posting: " + err.message);
                 }

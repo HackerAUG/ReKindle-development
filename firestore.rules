@@ -4,26 +4,6 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // --- Helper Functions ---
-    function isValidSignupUsername(username) {
-      // Username must be a string between 1 and 20 characters
-      // and must only contain alphanumeric characters.
-      return username is string &&
-             username.size() > 0 &&
-             username.size() <= 20 &&
-             username.matches("^[a-zA-Z0-9]+$") &&
-             (isDeveloper() || (
-               !username.matches(".*[uU][kK][iI][yY][oO].*") &&
-               !username.matches(".*[rR][eE][kK][iI][nN][dD][lL][eE].*") &&
-               !username.matches(".*[wW][aA][nN][tT][bB][aA][nN].*") &&
-               !username.matches(".*[rR][oO][oO][tT].*") &&
-               !username.matches(".*[sS][yY][sS][tT][eE][mM].*") &&
-               !username.matches(".*[aA][dD][mM][iI][nN].*") &&
-               !username.matches(".*[aA][dD][mM][iI][nN][iI][sS][tT][rR][aA][tT][oO][rR].*") &&
-               !username.matches(".*[mM][oO][dD].*") &&
-               !username.matches(".*[mM][oO][dD][eE][rR][aA][tT][oO][rR].*") &&
-               !username.matches(".*[sS][uU][pP][pP][oO][rR][tT].*")
-             ));
-    }
 
     function isValidActionUsername(username) {
       // Username must be a string between 1 and 40 characters
@@ -61,12 +41,6 @@ service cloud.firestore {
         request.auth.uid == 'ukiyo' ||
         request.auth.token.email == 'ukiyo@rekindle.ink'
       );
-    }
-
-    function isModerator() {
-      let uid = request.auth.uid;
-      let modDoc = get(/databases/$(database)/documents/config/moderators);
-      return request.auth != null && modDoc != null && uid in modDoc.data && modDoc.data[uid] == true;
     }
 
     // Helper to check if user is Pro

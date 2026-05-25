@@ -804,7 +804,7 @@
         let isReadOnly = false;
 
         // Firebase variables
-        let db, auth, currentUser = null;
+        let db, auth, socialAuth, currentUser = null;
 
         const firebaseConfig = {
             apiKey: "AIzaSyDY7x7vVmlYUyVZNLuCCmIQYa6PWFVfZqQ",
@@ -846,6 +846,16 @@
             if (window.rekindleApplyWallpaper) window.rekindleApplyWallpaper();
 
             firebase.initializeApp(firebaseConfig);
+            const socialApp = firebase.initializeApp({
+                apiKey: "AIzaSyBy_n32McwWZidFn28-1eHYBTYjvVDH_Wk",
+                authDomain: "rekindle-socials.firebaseapp.com",
+                projectId: "rekindle-socials",
+                storageBucket: "rekindle-socials.firebasestorage.app",
+                messagingSenderId: "804518808624",
+                appId: "1:804518808624:web:3be3521173526c92d0f9e5",
+                databaseURL: "https://rekindle-socials-default-rtdb.firebaseio.com/"
+            }, 'social');
+            socialAuth = socialApp.auth();
             auth = firebase.auth();
             db = firebase.firestore();
             rtdb = firebase.database();
@@ -884,14 +894,16 @@
             // db.enablePersistence({ synchronizeTabs: true }) ...
 
             auth.onAuthStateChanged(user => {
-                currentUser = user;
                 if (user) {
+                    currentUser = user;
                     // Check Pro Status (shared with other apps)
                     isPro = (localStorage.getItem('rekindle_is_pro') !== 'false');
                     const cachedExpiry = localStorage.getItem('rekindle_pro_expiry');
                     if (cachedExpiry && parseInt(cachedExpiry) > Date.now()) {
                         isPro = true;
                     }
+                    // Sign into social project for moderation worker
+                    getSocialAuthToken().catch(() => {});
                 } else {
                     isPro = false;
                 }
@@ -930,31 +942,64 @@
             }
         };
 
+        async function getSocialAuthToken() {
+            if (!socialAuth.currentUser) {
+                const getSocialToken = firebase.functions().httpsCallable('getSocialToken');
+                const result = await getSocialToken({});
+                await socialAuth.signInWithCustomToken(result.data.token);
+            }
+            return socialAuth.currentUser.getIdToken(true);
+        }
+
+        function createModerationImage(sourceCanvas, targetSize) {
+            const c = document.createElement('canvas');
+            c.width = targetSize;
+            c.height = targetSize;
+            const ctx = c.getContext('2d');
+            ctx.imageSmoothingEnabled = false;
+            ctx.drawImage(sourceCanvas, 0, 0, targetSize, targetSize);
+            return c.toDataURL('image/png');
+        }
+
         async function postToPixelChat() {
             if (!currentUser) return showModal(window.t('pixel.status.login_to_post', "You must be logged in to post."));
 
 
             // Get data URL from the pixel canvas only (no grid)
             const dataUrl = canvas.toDataURL('image/png');
+            // Upscale to 1024x1024 for OpenAI moderation — each pixel becomes ~32x32 blocks
+            // so the model can clearly see shapes even after aggressive downsampling
+            const moderationDataUrl = createModerationImage(canvas, 1024);
             const currentUsername = currentUser.email.split('@')[0];
 
             try {
-                // Use RTDB for 'general' chat messages (where artwork goes)
-                const messagesRef = rtdb.ref('kindlechat/messages');
-
-                // MODERATION CHECK — enforced server-side so it cannot be bypassed client-side
-                const postGeneralChatMessage = firebase.functions().httpsCallable('postGeneralChatMessage');
-                const result = await postGeneralChatMessage({
-                    text: window.t('pixel.status.shared', 'Shared a pixel art!'),
-                    pixel_art: dataUrl,
-                    grid_data: JSON.stringify(grid),
-                    is_pixel_art: true
+                const MODERATION_WORKER_URL = "https://rekindle-moderate.timjarnott.workers.dev";
+                const token = await getSocialAuthToken();
+                const resp = await fetch(MODERATION_WORKER_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + token
+                    },
+                    body: JSON.stringify({
+                        type: 'kindlechat',
+                        text: window.t('pixel.status.shared', 'Shared a pixel art!'),
+                        pixel_art: moderationDataUrl,
+                        grid_data: JSON.stringify(grid),
+                        is_pixel_art: true
+                    })
                 });
-                if (!result.data.allowed) {
+                const result = await resp.json();
+                if (result.allowed === false) {
                     closeModal('post-confirm-modal');
-                    const waitSec = Math.ceil((result.data.retryAfter || 20000) / 1000);
+                    const waitSec = Math.ceil((result.retryAfter || 20000) / 1000);
                     const slowDownMsg = window.t('pixel.status.slow_down', 'Please wait ' + waitSec + ' seconds before posting again.');
                     showModal(slowDownMsg, false);
+                    return;
+                }
+                if (result.error) {
+                    closeModal('post-confirm-modal');
+                    showModal(result.error);
                     return;
                 }
 

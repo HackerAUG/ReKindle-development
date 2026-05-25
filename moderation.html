@@ -222,18 +222,6 @@
             margin: 4px 0;
         }
 
-        .automod-window {
-            background: white;
-            border: 2px solid black;
-            box-shadow: var(--shadow);
-            display: none;
-            flex-direction: column;
-            width: 100%;
-            max-width: 860px;
-            margin-top: 20px;
-            margin-bottom: 20px;
-        }
-
         .automod-controls {
             display: flex;
             align-items: center;
@@ -242,129 +230,6 @@
 
         .automod-controls > * + * {
             margin-left: 12px;
-        }
-
-        .log-entry {
-            border: 1px solid #ccc;
-            padding: 10px 12px;
-            font-size: 11px;
-            font-family: "Courier New", monospace;
-            line-height: 1.6;
-        }
-
-        .log-entry + .log-entry {
-            border-top: none;
-        }
-
-        .log-entry .log-header {
-            display: flex;
-            align-items: center;
-            margin-bottom: 4px;
-            flex-wrap: wrap;
-        }
-
-        .log-entry .log-header > * + * {
-            margin-left: 10px;
-        }
-
-        .log-entry .log-time {
-            font-weight: bold;
-        }
-
-        .badge {
-            font-family: "Geneva", "Verdana", sans-serif;
-            font-size: 10px;
-            font-weight: bold;
-            padding: 1px 6px;
-            border: 1px solid black;
-            white-space: nowrap;
-        }
-
-        .badge-dryrun { background: #fffacd; }
-        .badge-live   { background: #d4edda; }
-        .badge-nuke   { background: #f8d7da; }
-        .badge-timeout { background: #fff3cd; }
-        .badge-skip   { background: #e2e3e5; }
-        .badge-error  { background: #f5c6cb; }
-
-        .log-summary {
-            color: #444;
-            font-style: italic;
-            margin-bottom: 6px;
-        }
-
-        .log-actions {
-            display: flex;
-            flex-direction: column;
-        }
-
-        .log-actions > * + * {
-            margin-top: 3px;
-        }
-
-        .log-action-row {
-            display: flex;
-            align-items: baseline;
-        }
-
-        .log-action-row > * + * {
-            margin-left: 8px;
-        }
-
-        .log-action-user {
-            font-weight: bold;
-            min-width: 120px;
-        }
-
-        .log-action-reason {
-            color: #555;
-            font-style: italic;
-        }
-
-        .strikes-grid {
-            display: flex;
-            flex-direction: column;
-            font-size: 11px;
-            font-family: "Courier New", monospace;
-        }
-
-        .strike-row {
-            display: flex;
-            align-items: center;
-            padding: 6px 10px;
-            border: 1px solid #ccc;
-            flex-wrap: wrap;
-        }
-
-        .strike-row > * + * {
-            margin-left: 12px;
-        }
-
-        .strike-row + .strike-row {
-            border-top: none;
-        }
-
-        .strike-user {
-            font-weight: bold;
-            min-width: 130px;
-        }
-
-        .strike-count {
-            font-size: 13px;
-            font-weight: bold;
-        }
-
-        .strike-count.at-limit { color: #c00; }
-
-        .strike-timeout {
-            font-weight: bold;
-            min-width: 90px;
-            color: #8a4800;
-        }
-
-        .strike-history {
-            color: #555;
-            flex: 1;
         }
 
         .no-data {
@@ -905,42 +770,6 @@
     </div>
 </div>
 
-<div class="automod-window" id="automod-runs-window">
-    <div class="title-bar">
-        <div class="title-bar-btn"></div>
-        <div class="title-bar-text">Automod Recent Runs</div>
-        <div class="title-bar-btn"></div>
-    </div>
-    <div class="content">
-        <div class="automod-controls">
-            <label for="log-limit">Show last:</label>
-            <select id="log-limit">
-                <option value="20">20 runs</option>
-                <option value="50" selected>50 runs</option>
-                <option value="100">100 runs</option>
-            </select>
-            <button class="btn-primary" onclick="fetchAutomodLog()">Refresh</button>
-            <label style="font-weight:normal;cursor:pointer;display:flex;align-items:center;"><input type="checkbox" id="automod-show-all" onchange="fetchAutomodLog()" style="margin-right:4px;"> Show all runs</label>
-        </div>
-        <div class="status-bar" id="automod-status">Loading...</div>
-        <div id="log-entries"><div class="no-data">Loading...</div></div>
-    </div>
-</div>
-
-<div class="automod-window" id="automod-strikes-window">
-    <div class="title-bar">
-        <div class="title-bar-btn"></div>
-        <div class="title-bar-text">Automod Strikes</div>
-        <div class="title-bar-btn"></div>
-    </div>
-    <div class="content">
-        <div class="automod-controls">
-            <button class="btn-primary" onclick="fetchAutomodLog()">Refresh</button>
-        </div>
-        <div class="strikes-grid" id="strikes-grid"><div class="no-data">Loading...</div></div>
-    </div>
-</div>
-
 <div class="banned-ips-window" id="banned-ips-window">
     <div class="title-bar">
         <div class="title-bar-btn"></div>
@@ -1082,14 +911,11 @@
             document.getElementById('admin-log-window').style.display = 'flex';
             mainUI.style.display = 'flex';
         }
-        document.getElementById('automod-runs-window').style.display = 'flex';
-        document.getElementById('automod-strikes-window').style.display = 'flex';
         document.getElementById('banned-ips-window').style.display = 'flex';
         document.getElementById('mod-actions-window').style.display = 'flex';
         if (isModerator) {
             document.getElementById('clear-log-btn').style.display = 'none';
         }
-        fetchAutomodLog();
         fetchBannedIps();
         fetchModActions();
     });
@@ -1312,14 +1138,14 @@
         var inputLower = input.toLowerCase();
 
         if (input.length > 20 && !input.includes(' ') && !input.includes('@')) {
-            var snap = await socialRtdb.ref('users_public/' + input).once('value');
+            var snap = await rtdb.ref('users_public/' + input).once('value');
             if (snap.exists()) {
                 var d = snap.val();
                 return { uid: input, emailHandle: d.email ? d.email.split('@')[0] : input, displayName: d.displayName || input };
             }
         }
 
-        var allSnap = await socialRtdb.ref('users_public').once('value');
+        var allSnap = await rtdb.ref('users_public').once('value');
         var users = allSnap.val() || {};
         for (var pair of Object.entries(users)) {
             var uid = pair[0], d = pair[1];
@@ -1577,141 +1403,6 @@
 
         btn.disabled = false;
     }
-
-    function statusLabel(status) {
-        if (!status) return '';
-        if (status.startsWith('dry_run_would_nuke')) return '<span class="badge badge-dryrun">DRY: would nuke</span>';
-        if (status.startsWith('dry_run_would_timeout')) return '<span class="badge badge-dryrun">DRY: would timeout ' + (status.match(/\d+/) || ['?'])[0] + 'h</span>';
-        if (status === 'nuked_immediate') return '<span class="badge badge-nuke">NUKED</span>';
-        if (status === 'nuked_escalated') return '<span class="badge badge-nuke">NUKED (strikes)</span>';
-        if (status.startsWith('timed_out')) return '<span class="badge badge-timeout">TIMEOUT ' + (status.match(/\d+/) || ['?'])[0] + 'h</span>';
-        if (status === 'skipped_cooldown') return '<span class="badge badge-skip">skipped (cooldown)</span>';
-        if (status === 'not_found') return '<span class="badge badge-skip">not found</span>';
-        if (status === 'error') return '<span class="badge badge-error">error</span>';
-        return '<span class="badge">' + escapeHtml(status) + '</span>';
-    }
-
-    async function fetchAutomodLog() {
-        var automodStatus = document.getElementById('automod-status');
-        var logEntries = document.getElementById('log-entries');
-        var strikesGrid = document.getElementById('strikes-grid');
-        automodStatus.textContent = 'Loading automod data...';
-
-        var limit = parseInt(document.getElementById('log-limit').value, 10);
-
-        // Fetch log and strikes in parallel
-        try {
-            var [logSnap, strikesSnap] = await Promise.all([
-                rtdb.ref('automod_log').orderByKey().limitToLast(limit).once('value'),
-                rtdb.ref('automod_strikes').once('value')
-            ]);
-
-            // ── Strike Records ─────────────────────────────────────────────────
-            var strikesData = strikesSnap.val() || {};
-            var strikeUids = Object.keys(strikesData).filter(uid => {
-                var s = strikesData[uid];
-                return s && s.count && s.count > 0;
-            });
-
-            if (strikeUids.length === 0) {
-                strikesGrid.innerHTML = '<div class="no-data">No active strike records.</div>';
-            } else {
-                // Resolve usernames in parallel
-                var nameMap = {};
-                await Promise.all(
-                    strikeUids.map(async function(uid) { nameMap[uid] = await resolveUid(uid); })
-                );
-
-                // Sort by strike count desc, then last strike ts desc
-                strikeUids.sort(function(a, b) {
-                    var sa = strikesData[a], sb = strikesData[b];
-                    return (sb.count - sa.count) || ((sb.lastStrikeAt || 0) - (sa.lastStrikeAt || 0));
-                });
-
-                var html = '';
-                var now = Date.now();
-                var windowMs = 30 * 24 * 60 * 60 * 1000;
-                strikeUids.forEach(function(uid) {
-                    var s = strikesData[uid];
-                    var atLimit = s.count >= STRIKE_LIMIT;
-                    var recentStrikes = (s.strikes || []).filter(function(st) { return st.ts >= now - windowMs; });
-                    var statusLabel = atLimit ? 'banned' : 'active';
-                    var strikeDetails = recentStrikes.map(function(st) {
-                        return '[' + formatDate(st.ts) + '] ' + escapeHtml(st.reason || '');
-                    }).join(' | ');
-                    html += '<div class="strike-row">'
-                        + '<span class="strike-user">' + escapeHtml(nameMap[uid] || uid) + '</span>'
-                        + '<span class="strike-count' + (atLimit ? ' at-limit' : '') + '">' + s.count + '/' + STRIKE_LIMIT + '</span>'
-                        + '<span class="strike-timeout">' + escapeHtml(statusLabel) + '</span>'
-                        + '<span class="strike-history">Last: ' + formatDate(s.lastStrikeAt) + ' &nbsp;|&nbsp; ' + strikeDetails + '</span>'
-                        + '</div>';
-                });
-                strikesGrid.innerHTML = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
-            }
-
-            // ── Log Entries ────────────────────────────────────────────────────
-            var logData = logSnap.val() || {};
-            var logKeys = Object.keys(logData).reverse(); // newest first
-
-            if (logKeys.length === 0) {
-                logEntries.innerHTML = '<div class="no-data">No automod runs recorded yet.</div>';
-                automodStatus.textContent = 'No runs found.';
-                return;
-            }
-
-            var actionRuns = 0;
-            var showAll = document.getElementById('automod-show-all').checked;
-            var html = '';
-            logKeys.forEach(function(key) {
-                var entry = logData[key];
-                if (!entry) return;
-
-                var hasActions = Array.isArray(entry.actions) && entry.actions.length > 0;
-                var nonSkipped = hasActions ? entry.actions.filter(function(a) {
-                    return a.status && !a.status.startsWith('skipped') && a.status !== 'not_found';
-                }) : [];
-                if (nonSkipped.length > 0) actionRuns++;
-                if (!showAll && !entry.error && nonSkipped.length === 0) return;
-
-                var runBadge = entry.dryRun
-                    ? '<span class="badge badge-dryrun">DRY RUN</span>'
-                    : '<span class="badge badge-live">LIVE</span>';
-
-                var actionsHtml = '';
-                if (hasActions) {
-                    actionsHtml = '<div class="log-actions">';
-                    entry.actions.forEach(function(a) {
-                        actionsHtml += '<div class="log-action-row">'
-                            + statusLabel(a.status)
-                            + '<span class="log-action-user">' + escapeHtml(a.username || '?') + '</span>'
-                            + '<span class="log-action-reason">' + escapeHtml((a.reason || '').substring(0, 120)) + '</span>'
-                            + '</div>';
-                    });
-                    actionsHtml += '</div>';
-                } else {
-                    actionsHtml = '<div class="log-action-row" style="color:#aaa;font-style:italic;">No actions taken.</div>';
-                }
-
-                html += '<div class="log-entry">'
-                    + '<div class="log-header">'
-                    + '<span class="log-time">' + formatDate(entry.ts) + '</span>'
-                    + runBadge
-                    + (entry.error ? '<span class="badge badge-error">ERROR: ' + escapeHtml(entry.error) + '</span>' : '')
-                    + '</div>'
-                    + '<div class="log-summary">' + escapeHtml(entry.summary || '—') + '</div>'
-                    + actionsHtml
-                    + '</div>';
-            });
-
-            logEntries.innerHTML = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
-            automodStatus.textContent = logKeys.length + ' runs loaded, ' + actionRuns + ' with actions. ' + strikeUids.length + ' user(s) with active strikes.' + (showAll ? '' : ' Showing runs with actions/errors only.');
-        } catch (err) {
-            console.error(err);
-            automodStatus.textContent = 'Error loading automod data: ' + (err.message || err);
-        }
-    }
-
-    var STRIKE_LIMIT = 3;
 
     // ── Moderator Actions ─────────────────────────────────────────────────────
 
@@ -1993,7 +1684,7 @@
 
             // Try direct UID lookup
             if (input.length > 20 && !input.includes(' ') && !input.includes('@')) {
-                var directSnap = await socialRtdb.ref('users_public/' + input).once('value');
+                var directSnap = await rtdb.ref('users_public/' + input).once('value');
                 if (directSnap.exists()) {
                     uid = input;
                     var d = directSnap.val();
@@ -2004,7 +1695,7 @@
 
             // Scan users_public by displayName, username, or email
             if (!uid) {
-                var allSnap = await socialRtdb.ref('users_public').once('value');
+                var allSnap = await rtdb.ref('users_public').once('value');
                 var allUsers = allSnap.val() || {};
                 var inputLower = input.toLowerCase();
                 for (var entry of Object.entries(allUsers)) {
@@ -2025,7 +1716,7 @@
                 if (!stripeSnap.empty) {
                     var stripeDoc = stripeSnap.docs[0];
                     uid = stripeDoc.id;
-                    var pubSnap = await socialRtdb.ref('users_public/' + uid).once('value');
+                    var pubSnap = await rtdb.ref('users_public/' + uid).once('value');
                     var pubData = pubSnap.val() || {};
                     displayName = pubData.displayName || '';
                     email = pubData.email || '';

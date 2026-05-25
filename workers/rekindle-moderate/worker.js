@@ -317,14 +317,34 @@ function b64urlEncode(buffer) {
 const moderationCache = new Map(); // text -> { result, expiry }
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
-async function moderateContent(text, apiKey) {
+async function moderateContent(text, apiKey, imageUrl) {
     if (!apiKey) throw new Error("OpenAI API key not configured");
-    if (!text || typeof text !== "string") return { flagged: false, categories: {} };
+    if (!text && !imageUrl) return { flagged: false, categories: {} };
 
-    // Check cache
-    const cached = moderationCache.get(text);
-    if (cached && cached.expiry > Date.now()) {
-        return cached.result;
+    // Check cache (text-only)
+    if (!imageUrl && text && typeof text === "string") {
+        const cached = moderationCache.get(text);
+        if (cached && cached.expiry > Date.now()) {
+            return cached.result;
+        }
+    }
+
+    let requestBody;
+    if (imageUrl) {
+        const input = [{ type: "image_url", image_url: { url: imageUrl } }];
+        if (text) {
+            input.unshift({ type: "text", text: text });
+        }
+        requestBody = {
+            model: "omni-moderation-latest",
+            input: input
+        };
+        console.log("[MODERATION] Sending image to OpenAI. Image URL length:", imageUrl.length, "hasText:", !!text, "categories with image support: sexual, violence, violence/graphic, self-harm, self-harm/intent, self-harm/instructions");
+    } else {
+        requestBody = {
+            model: "omni-moderation-latest",
+            input: text
+        };
     }
 
     const callOpenAI = async () => {
@@ -334,7 +354,7 @@ async function moderateContent(text, apiKey) {
                 "Content-Type": "application/json",
                 "Authorization": `Bearer ${apiKey}`
             },
-            body: JSON.stringify({ input: text })
+            body: JSON.stringify(requestBody)
         });
     };
 
@@ -355,18 +375,62 @@ async function moderateContent(text, apiKey) {
 
     const data = await resp.json();
     const result = data.results && data.results[0];
-    if (!result) return { flagged: false, categories: {} };
+    if (!result) {
+        console.log("[MODERATION] No results from OpenAI");
+        return { flagged: false, categories: {} };
+    }
 
     const moderationResult = {
         flagged: result.flagged === true,
         categories: result.categories || {},
-        categoryScores: result.category_scores || {}
+        categoryScores: result.category_scores || {},
+        appliedInputTypes: result.category_applied_input_types || {}
     };
 
-    // Store in cache
-    moderationCache.set(text, { result: moderationResult, expiry: Date.now() + CACHE_TTL_MS });
+    console.log("[MODERATION] OpenAI result — flagged:", moderationResult.flagged, "categories:", JSON.stringify(moderationResult.categories), "scores:", JSON.stringify(moderationResult.categoryScores), "appliedInputTypes:", JSON.stringify(moderationResult.appliedInputTypes));
+
+    // Store in cache (text-only)
+    if (!imageUrl && text && typeof text === "string") {
+        moderationCache.set(text, { result: moderationResult, expiry: Date.now() + CACHE_TTL_MS });
+    }
 
     return moderationResult;
+}
+
+// Custom score thresholds for pixel art (omni-moderation-latest returns low scores for stylized images)
+const PIXEL_ART_THRESHOLDS = {
+    sexual: 0.008,
+    violence: 0.008,
+    "violence/graphic": 0.008,
+    "self-harm": 0.008,
+    "self-harm/intent": 0.008,
+    "self-harm/instructions": 0.008
+};
+
+function checkPixelArtScores(mod, isPixelArt) {
+    if (!isPixelArt || mod.flagged) return mod;
+
+    const flaggedCategories = {};
+    let anyFlagged = false;
+
+    for (const [category, threshold] of Object.entries(PIXEL_ART_THRESHOLDS)) {
+        const score = mod.categoryScores[category] || 0;
+        if (score >= threshold) {
+            flaggedCategories[category] = true;
+            anyFlagged = true;
+        }
+    }
+
+    if (anyFlagged) {
+        console.log("[MODERATION] Pixel art flagged by custom thresholds:", JSON.stringify(flaggedCategories));
+        return {
+            ...mod,
+            flagged: true,
+            categories: { ...mod.categories, ...flaggedCategories }
+        };
+    }
+
+    return mod;
 }
 
 function formatFlaggedCategories(categories) {
@@ -505,7 +569,9 @@ export default {
             // --- KINDLECHAT ---
             if (type === "kindlechat") {
                 const trimmed = String(text).substring(0, 1000);
-                if (!trimmed) {
+                const hasFlipnote = body.flipnote_data && typeof body.flipnote_data === "object";
+                const hasPixelArt = body.pixel_art && typeof body.pixel_art === "string";
+                if (!trimmed && !hasFlipnote && !hasPixelArt) {
                     return new Response(JSON.stringify({ error: "Empty message" }), { status: 400, headers });
                 }
 
@@ -531,6 +597,24 @@ export default {
                 const allowedExtras = ["pixel_art", "grid_data", "is_pixel_art", "is_flipnote", "flipnote_data"];
                 for (const key of allowedExtras) {
                     if (key in body) msgData[key] = body[key];
+                }
+
+                // Flipbook bypasses moderation (animation data, not images)
+                const isFlipnote = body.is_flipnote === true;
+                // Pixel art sends image for moderation
+                const pixelArt = body.pixel_art || null;
+                console.log("[WORKER] kindlechat request — isFlipnote:", isFlipnote, "hasPixelArt:", !!pixelArt, "pixelArtLength:", pixelArt ? pixelArt.length : 0, "pixelArtIsBase64:", pixelArt ? pixelArt.startsWith("data:image") : false);
+
+                if (!isFlipnote) {
+                    // For pixel art, send image-only moderation (no benign text) to avoid diluting image scores
+                    const imageText = pixelArt ? null : trimmed;
+                    const isPixelArt = body.is_pixel_art === true;
+                    let mod = await moderateContent(imageText, env.OPENAI_API_KEY, pixelArt);
+                    mod = checkPixelArtScores(mod, isPixelArt);
+                    if (mod.flagged) {
+                        await logAutomodRejection(uid, "kindlechat", trimmed, mod.categories, accessToken);
+                        return new Response(JSON.stringify({ error: moderationErrorMessage(mod) }), { status: 400, headers });
+                    }
                 }
 
                 const result = await rtdbPush("kindlechat/messages", msgData, token);
