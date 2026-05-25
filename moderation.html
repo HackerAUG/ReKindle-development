@@ -891,6 +891,7 @@
     var socialApp = firebase.initializeApp(socialConfig, 'social');
     var socialRtdb = socialApp.database();
     var socialDb = socialApp.firestore();
+    var socialAuth = socialApp.auth();
 
     var ADMIN_EMAIL = 'ukiyo@rekindle.ink';
 
@@ -901,6 +902,7 @@
         if (!user) {
             gate.innerHTML = '<p style="font-weight:bold;">Access denied.</p><p>You must be signed in to view this page.</p>';
             mainUI.style.display = 'none';
+            if (socialAuth) socialAuth.signOut();
             return;
         }
 
@@ -917,6 +919,17 @@
                 mainUI.style.display = 'none';
                 return;
             }
+        }
+
+        // Authenticate with social project before loading social data
+        try {
+            var getSocialToken = firebase.functions().httpsCallable('getSocialToken');
+            var tokenResult = await getSocialToken({});
+            await socialAuth.signInWithCustomToken(tokenResult.data.token);
+        } catch (e) {
+            console.warn('Social auth failed:', e);
+            gate.innerHTML = '<p style="font-weight:bold;">Access denied.</p><p>Could not authenticate with social services.</p><p style="font-size:11px;color:#999;">' + escapeHtml(e.message || e) + '</p>';
+            return;
         }
 
         gate.style.display = 'none';
@@ -1185,11 +1198,34 @@
         if (!input) return null;
         var inputLower = input.toLowerCase();
 
+        // 1. Try direct UID lookup in user_cards
         if (input.length > 20 && !input.includes(' ') && !input.includes('@')) {
-            var d = await resolveUsersPublic(input);
-            if (d) {
-                return { uid: input, emailHandle: d.email ? d.email.split('@')[0] : input, displayName: d.displayName || input };
+            try {
+                var cardSnap = await rtdb.ref('user_cards/' + input).once('value');
+                if (cardSnap.exists()) {
+                    var d = cardSnap.val();
+                    return { uid: input, emailHandle: d.username || input, displayName: d.username || input };
+                }
+            } catch (e) {}
+        }
+
+        // 2. Scan user_cards by username
+        try {
+            var cardsSnap = await rtdb.ref('user_cards').once('value');
+            var cards = cardsSnap.val() || {};
+            for (var pair of Object.entries(cards)) {
+                var uid = pair[0], d = pair[1];
+                var username = (d.username || '').toLowerCase();
+                if (username === inputLower || uid === input) {
+                    return { uid: uid, emailHandle: d.username || uid, displayName: d.username || input };
+                }
             }
+        } catch (e) {}
+
+        // 3. Fallback to users_public (main + social)
+        var d = await resolveUsersPublic(input);
+        if (d) {
+            return { uid: input, emailHandle: d.email ? d.email.split('@')[0] : input, displayName: d.displayName || input };
         }
 
         var users = await getAllUsersPublic();
@@ -1803,17 +1839,43 @@
         try {
             var uid = null, displayName = '', email = '';
 
-            // Try direct UID lookup
+            // 1. Try direct UID lookup in user_cards
             if (input.length > 20 && !input.includes(' ') && !input.includes('@')) {
-                var directData = await resolveUsersPublic(input);
-                if (directData) {
-                    uid = input;
-                    displayName = directData.displayName || '';
-                    email = directData.email || '';
-                }
+                try {
+                    var cardSnap = await rtdb.ref('user_cards/' + input).once('value');
+                    if (cardSnap.exists()) {
+                        uid = input;
+                        var d = cardSnap.val();
+                        displayName = d.username || '';
+                    }
+                } catch (e) {}
             }
 
-            // Scan users_public by displayName, username, or email
+            // 2. Scan user_cards by username
+            if (!uid) {
+                try {
+                    var cardsSnap = await rtdb.ref('user_cards').once('value');
+                    var cards = cardsSnap.val() || {};
+                    var inputLower = input.toLowerCase();
+                    for (var entry of Object.entries(cards)) {
+                        var u = entry[0], d = entry[1];
+                        var un = (d.username || '').toLowerCase();
+                        if (un === inputLower || u === input) {
+                            uid = u; displayName = d.username || '';
+                            break;
+                        }
+                    }
+                } catch (e) {}
+            }
+
+            // 3. Enrich with users_public for email/displayName if found via user_cards
+            if (uid) {
+                var pubData = await resolveUsersPublic(uid) || {};
+                if (pubData.email && !email) email = pubData.email;
+                if (pubData.displayName && !displayName) displayName = pubData.displayName;
+            }
+
+            // 4. Fallback: scan users_public by displayName, username, or email
             if (!uid) {
                 var allUsers = await getAllUsersPublic();
                 var inputLower = input.toLowerCase();
@@ -1829,7 +1891,7 @@
                 }
             }
 
-            // Try Stripe customer ID (cus_...)
+            // 5. Try Stripe customer ID (cus_...)
             if (!uid && input.startsWith('cus_')) {
                 var stripeSnap = await firestore.collection('users').where('stripeCustomerId', '==', input).limit(1).get();
                 if (!stripeSnap.empty) {
