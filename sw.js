@@ -1,9 +1,9 @@
-const CACHE_NAME = 'rekindle-cache-v19'; // Bumped version to force update
+const CACHE_NAME = 'rekindle-cache-v20'; // Bumped version to force update
 const ASSETS_TO_CACHE = [
     './',
     './index.html',
-    './icons.js',
-    './theme.js',
+    './icons.js?v=2',
+    './theme.js?v=18',
     './logo.svg',
     './discord.svg',
     './donate.svg',
