@@ -94,6 +94,19 @@
             font-size: 1.1rem;
         }
 
+        .beta-badge {
+            font-size: 0.6rem;
+            margin-left: 5px;
+            border: 1px solid black;
+            padding: 1px 3px;
+            font-weight: bold;
+            font-family: sans-serif;
+            vertical-align: text-top;
+            display: inline-block;
+            background: white;
+            color: black;
+        }
+
         .close-box {
             position: absolute;
             left: 10px;
@@ -606,7 +619,7 @@
         <div class="title-bar">
             <div class="title-stripes"></div>
             <div class="close-box" onclick="window.location.href='index'">X</div>
-            <div class="title-text">Readwise</div>
+            <div class="title-text">Readwise<span class="beta-badge">BETA</span></div>
             <div class="controls">
                 <button class="icon-btn" onclick="openSettings()" title="Settings" style="margin-right: 5px;">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
@@ -815,11 +828,19 @@
             } else if (view === 'highlights') {
                 titleEl.textContent = 'Highlights';
                 controlsEl.innerHTML = `<button class="sys-btn" onclick="refreshData()">Refresh</button>`;
-                renderHighlights();
+                if (state.token && state.highlights.books.length === 0 && !state.highlights.isLoading) {
+                    loadHighlights();
+                } else {
+                    renderHighlights();
+                }
             } else if (view === 'review') {
                 titleEl.textContent = 'Daily Review';
                 controlsEl.innerHTML = `<button class="sys-btn" onclick="refreshData()">Refresh</button>`;
-                renderReview();
+                if (state.token && !state.review.data && !state.review.isLoading) {
+                    loadReview();
+                } else {
+                    renderReview();
+                }
             }
         }
 
