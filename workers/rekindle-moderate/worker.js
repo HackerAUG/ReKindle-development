@@ -132,6 +132,7 @@ async function firestorePatch(docPath, data, accessToken) {
 /* ------------------------------------------------------------------ */
 async function rtdbPush(path, data, userToken) {
     const url = `https://rekindle-socials-default-rtdb.firebaseio.com/${path}.json?auth=${encodeURIComponent(userToken)}`;
+    console.log("[WORKER] rtdbPush URL:", url.replace(/auth=([^&]+)/, "auth=<REDACTED>"));
     const resp = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -139,6 +140,7 @@ async function rtdbPush(path, data, userToken) {
     });
     if (!resp.ok) {
         const errText = await resp.text();
+        console.error("[WORKER] rtdbPush failed:", resp.status, errText);
         throw new Error(`RTDB push failed (${resp.status}): ${errText}`);
     }
     return await resp.json();
@@ -736,6 +738,7 @@ export default {
                     }
                 }
 
+                console.log("[WORKER] kindlechat post — token claims:", { email: payload.email, ageVerified: payload.ageVerified, moderator: payload.moderator, aud: payload.aud });
                 const result = await rtdbPush("kindlechat/messages", msgData, token);
                 return new Response(JSON.stringify({ allowed: true, key: result.name }), { status: 200, headers });
             }

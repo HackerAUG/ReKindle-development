@@ -2861,7 +2861,7 @@
         function doSubmitComment(postId, input, text) {
             input.disabled = true;
 
-            var tokenSource = currentUser || socialAuth.currentUser;
+            var tokenSource = socialAuth.currentUser || currentUser;
             tokenSource.getIdToken(true).then(function (token) {
                 return fetch(MODERATION_WORKER_URL, {
                     method: 'POST',
@@ -3178,7 +3178,7 @@
             const btn = document.querySelector('button[onclick="submitPost()"]');
             if (btn) btn.disabled = true;
 
-            var tokenSource = currentUser || socialAuth.currentUser;
+            var tokenSource = socialAuth.currentUser || currentUser;
             tokenSource.getIdToken(true).then(function (token) {
                 return fetch(MODERATION_WORKER_URL, {
                     method: 'POST',
@@ -3200,7 +3200,7 @@
 
                 // Request translations asynchronously via worker
                 if (typeof TRANSLATION_WORKER_URL !== 'undefined' && TRANSLATION_WORKER_URL) {
-                    var tokenSource = currentUser || socialAuth.currentUser;
+                    var tokenSource = socialAuth.currentUser || currentUser;
                     tokenSource.getIdToken(true).then(function (token) {
                         fetch(TRANSLATION_WORKER_URL, {
                             method: 'POST',
@@ -3281,7 +3281,7 @@
 
             console.log("Reprocessing post:", postId);
 
-            var tokenSource = currentUser || socialAuth.currentUser;
+            var tokenSource = socialAuth.currentUser || currentUser;
             tokenSource.getIdToken(true).then(function (token) {
                 fetch(TRANSLATION_WORKER_URL, {
                     method: 'POST',

@@ -2719,7 +2719,8 @@
                 setTimeout(function () { isSendingMessage = false; }, 3000); // failsafe unlock
 
                 // SPAM PROTECTION + MODERATION: Enforced via Cloudflare Worker
-                var tokenSource = currentUser || socialAuth.currentUser;
+                var tokenSource = socialAuth.currentUser || currentUser;
+                console.log('[KindleChat] Post token source:', tokenSource === socialAuth.currentUser ? 'social' : 'main', 'socialAuth.currentUser:', !!socialAuth.currentUser, 'currentUser:', !!currentUser);
                 tokenSource.getIdToken(true).then(function (token) {
                     return fetch(MODERATION_WORKER_URL, {
                         method: 'POST',
@@ -2811,7 +2812,7 @@
             // Visual feedback?
             console.log("Reprocessing message:", msgId);
 
-            var tokenSource = currentUser || socialAuth.currentUser;
+            var tokenSource = socialAuth.currentUser || currentUser;
             tokenSource.getIdToken(true).then(function (token) {
                 fetch(TRANSLATION_WORKER_URL, {
                     method: 'POST',
@@ -3093,7 +3094,7 @@
             if (!currentUser) return;
             attempt = attempt || 1;
 
-            var tokenSource = currentUser || socialAuth.currentUser;
+            var tokenSource = socialAuth.currentUser || currentUser;
             tokenSource.getIdToken(true).then(function (token) {
                 fetch(TRANSLATION_WORKER_URL, {
                     method: 'POST',

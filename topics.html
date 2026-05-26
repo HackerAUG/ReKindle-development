@@ -2301,7 +2301,7 @@
             input.value = '';
 
             var postingTopicId = currentTopicId;
-            var tokenSource = currentUser || socialAuth.currentUser;
+            var tokenSource = socialAuth.currentUser || currentUser;
             tokenSource.getIdToken(true).then(function (token) {
                     return fetch(MODERATION_WORKER_URL, {
                         method: 'POST',
@@ -2628,7 +2628,7 @@
                     submitBtn.innerText = window.t ? window.t('topics.btn.creating', 'Creating...') : 'Creating...';
                 }
 
-                var tokenSource = currentUser || socialAuth.currentUser;
+                var tokenSource = socialAuth.currentUser || currentUser;
                 tokenSource.getIdToken(true).then(function (token) {
                     return fetch(MODERATION_WORKER_URL, {
                         method: 'POST',
