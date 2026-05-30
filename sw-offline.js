@@ -22,7 +22,7 @@ const ASSETS_TO_CACHE = [
     './contacts',
     './notes',
     './quicktodo',
-    './pomodoro',
+    './timer',
     './streak',
     './flashcards',
     // Tools

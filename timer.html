@@ -624,6 +624,7 @@
             <div class="tab-btn active" id="tab-focus" onclick="switchTab('focus')" data-i18n="timer.tab.focus">Focus
             </div>
             <div class="tab-btn" id="tab-multi" onclick="switchTab('multi')" data-i18n="timer.tab.multi">Timers</div>
+            <div class="tab-btn" id="tab-stopwatch" onclick="switchTab('stopwatch')" data-i18n="timer.tab.stopwatch">Stopwatch</div>
         </div>
 
         <div class="window-content">
@@ -662,6 +663,26 @@
             <div id="view-multi" class="view-section">
                 <div id="timer-list">
                     <!-- Timers will be dynamically generated here -->
+                </div>
+            </div>
+
+            <!-- --- STOPWATCH VIEW --- -->
+            <div id="view-stopwatch" class="view-section">
+                <div class="focus-timer-wrapper" style="margin-top: 20px;">
+                    <div class="focus-timer-content">
+                        <div id="stopwatch-display" style="font-size: 3.5rem;">00:00.00</div>
+                        <div id="stopwatch-status" data-i18n="timer.status.stopwatch">STOPWATCH</div>
+                    </div>
+                </div>
+
+                <div class="focus-controls" style="grid-template-columns: 1fr 1fr 1fr;">
+                    <button class="ctrl-btn" id="stopwatch-start-btn" onclick="toggleStopwatch()" data-i18n="timer.btn.start">Start</button>
+                    <button class="ctrl-btn" onclick="resetStopwatch()" data-i18n="timer.btn.reset">Reset</button>
+                    <button class="ctrl-btn" onclick="lapStopwatch()" data-i18n="timer.btn.lap">Lap</button>
+                </div>
+
+                <div id="lap-list" style="width: 100%; max-width: 400px; flex-grow: 1; margin-top: 10px; border-top: 2px solid black; padding-top: 10px;">
+                    <!-- Laps will be dynamically generated here -->
                 </div>
             </div>
 
@@ -704,6 +725,15 @@
         let multiTimers = [];
         let nextMultiId = 1;
 
+        // Stopwatch State
+        let stopwatchState = {
+            elapsed: 0,
+            isRunning: false,
+            intervalId: null,
+            startTime: 0,
+            laps: []
+        };
+
         // --- INIT ---
         window.onload = function () {
             if (window.rekindleApplyWallpaper) window.rekindleApplyWallpaper();
@@ -717,8 +747,7 @@
             // but for now we follow the pattern of pausing on reload to be safe/simple.
             updateFocusUI();
             renderMultiTimers();
-
-
+            updateStopwatchUI();
 
             // Input Enter key
             document.getElementById('custom-min-input').addEventListener("keypress", function (event) {
@@ -1062,6 +1091,100 @@
             return "READY";
         }
 
+        // --- STOPWATCH LOGIC ---
+        function toggleStopwatch() {
+            const btn = document.getElementById('stopwatch-start-btn');
+
+            if (stopwatchState.isRunning) {
+                // Pause
+                clearInterval(stopwatchState.intervalId);
+                stopwatchState.intervalId = null;
+                stopwatchState.isRunning = false;
+                btn.innerText = window.t('timer.btn.resume', 'Resume');
+                document.getElementById('stopwatch-status').innerText = window.t('timer.status.paused', 'PAUSED');
+            } else {
+                // Start
+                stopwatchState.isRunning = true;
+                stopwatchState.startTime = Date.now() - stopwatchState.elapsed;
+                btn.innerText = window.t('timer.btn.pause', 'Pause');
+                document.getElementById('stopwatch-status').innerText = window.t('timer.status.stopwatch', 'STOPWATCH');
+
+                stopwatchState.intervalId = setInterval(function () {
+                    stopwatchState.elapsed = Date.now() - stopwatchState.startTime;
+                    updateStopwatchUI();
+                    saveState();
+                }, 100);
+            }
+            saveState();
+        }
+
+        function resetStopwatch() {
+            clearInterval(stopwatchState.intervalId);
+            stopwatchState.intervalId = null;
+            stopwatchState.isRunning = false;
+            stopwatchState.elapsed = 0;
+            stopwatchState.startTime = 0;
+            stopwatchState.laps = [];
+
+            document.getElementById('stopwatch-start-btn').innerText = window.t('timer.btn.start', 'Start');
+            document.getElementById('stopwatch-status').innerText = window.t('timer.status.stopwatch', 'STOPWATCH');
+            updateStopwatchUI();
+            renderLaps();
+            saveState();
+        }
+
+        function lapStopwatch() {
+            if (stopwatchState.elapsed === 0 && !stopwatchState.isRunning) return;
+            stopwatchState.laps.unshift(stopwatchState.elapsed);
+            renderLaps();
+            saveState();
+        }
+
+        function updateStopwatchUI() {
+            document.getElementById('stopwatch-display').innerText = formatStopwatchTime(stopwatchState.elapsed);
+            updateDocumentTitle();
+        }
+
+        function formatStopwatchTime(ms) {
+            const totalSeconds = Math.floor(ms / 1000);
+            const centis = Math.floor((ms % 1000) / 10);
+            const hours = Math.floor(totalSeconds / 3600);
+            const mins = Math.floor((totalSeconds % 3600) / 60);
+            const secs = totalSeconds % 60;
+
+            const mStr = String(mins).padStart(2, '0');
+            const sStr = String(secs).padStart(2, '0');
+            const cStr = String(centis).padStart(2, '0');
+
+            if (hours > 0) {
+                const hStr = String(hours).padStart(2, '0');
+                return hStr + ':' + mStr + ':' + sStr + '.' + cStr;
+            }
+            return mStr + ':' + sStr + '.' + cStr;
+        }
+
+        function renderLaps() {
+            const list = document.getElementById('lap-list');
+            if (stopwatchState.laps.length === 0) {
+                list.innerHTML = '';
+                return;
+            }
+
+            let html = '';
+            for (let i = 0; i < stopwatchState.laps.length; i++) {
+                const lapNum = stopwatchState.laps.length - i;
+                const lapTime = stopwatchState.laps[i];
+                let split = lapTime;
+                if (i > 0) {
+                    split = lapTime - stopwatchState.laps[i - 1];
+                }
+                html += '<div style="display: flex; justify-content: space-between; padding: 6px 10px; border-bottom: 1px solid #eee; font-family: \'Courier New\', monospace; font-size: 0.95rem;">' +
+                    '<span>Lap ' + lapNum + '</span>' +
+                    '<span>' + formatStopwatchTime(lapTime) + ' <span style="color: #888; font-size: 0.8rem;">(' + formatStopwatchTime(split) + ')</span></span>' +
+                    '</div>';
+            }
+            list.innerHTML = html;
+        }
 
         // --- SHARED MODAL ---
         function openCustomModal(target) {
@@ -1111,6 +1234,10 @@
             const mSave = multiTimers.map(t => ({ ...t, intervalId: null, isRunning: false }));
             localStorage.setItem('rekindle_multi_timers', JSON.stringify(mSave));
             localStorage.setItem('rekindle_multi_nextId', nextMultiId);
+
+            // Stopwatch
+            const sSave = { ...stopwatchState, intervalId: null, isRunning: false };
+            localStorage.setItem('rekindle_stopwatch_state', JSON.stringify(sSave));
         }
 
         function loadState() {
@@ -1134,6 +1261,15 @@
                 }
                 const nId = localStorage.getItem('rekindle_multi_nextId');
                 if (nId) nextMultiId = parseInt(nId);
+            } catch (e) { }
+
+            // Stopwatch
+            try {
+                const sData = JSON.parse(localStorage.getItem('rekindle_stopwatch_state'));
+                if (sData) {
+                    stopwatchState = { ...stopwatchState, ...sData, intervalId: null, isRunning: false };
+                    renderLaps();
+                }
             } catch (e) { }
         }
 
@@ -1161,13 +1297,18 @@
         function updateDocumentTitle() {
             // Priority 1: Focus Timer Running
             if (focusState.isRunning) {
-                document.title = `${formatTime(focusState.timeLeft)} - Focus`;
+                document.title = formatTime(focusState.timeLeft) + ' - Focus';
                 return;
             }
-            // Priority 2: Multi Timer Running (First one)
-            const running = multiTimers.find(t => t.isRunning);
+            // Priority 2: Stopwatch Running
+            if (stopwatchState.isRunning) {
+                document.title = formatStopwatchTime(stopwatchState.elapsed) + ' - Stopwatch';
+                return;
+            }
+            // Priority 3: Multi Timer Running (First one)
+            const running = multiTimers.find(function(t) { return t.isRunning; });
             if (running) {
-                document.title = `${formatTime(running.timeLeft)} - Timer`;
+                document.title = formatTime(running.timeLeft) + ' - Timer';
                 return;
             }
             document.title = "Timer";

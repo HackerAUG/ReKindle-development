@@ -141,7 +141,7 @@ const APPS = [
         icon: '<rect x="6" y="8" width="20" height="14" fill="white" stroke="black" stroke-width="2"/><rect x="8" y="10" width="20" height="14" fill="white" stroke="black" stroke-width="2"/><text x="18" y="21" font-size="10" text-anchor="middle" stroke="none" fill="black">A</text>'
     },
     {
-        id: 'pomodoro',
+        id: 'timer',
         name: 'Timers',
         cat: 'tools',
         icon: '<circle cx="16" cy="18" r="10" stroke-width="2" /> <path d="M16 18 V8 M16 8 L20 4 M16 8 L12 4" stroke-width="2"/>'
@@ -649,6 +649,12 @@ const APPS = [
         name: 'Spelling Bee',
         cat: 'games',
         icon: '<path d="M16 2 L28 9 L28 23 L16 30 L4 23 L4 9 Z"/><circle cx="16" cy="16" r="4" fill="black"/>'
+    },
+    {
+        id: 'strands',
+        name: 'Strands',
+        cat: 'games',
+        icon: '<rect x="4" y="4" width="24" height="24" fill="none" stroke="black" stroke-width="2"/><path d="M8 8 H12 V12 H16 V16 H20 V20 H24" fill="none" stroke="black" stroke-width="2"/><circle cx="8" cy="8" r="1.5" fill="black"/><circle cx="24" cy="20" r="1.5" fill="black"/>'
     },
     {
         id: 'sudoku',
