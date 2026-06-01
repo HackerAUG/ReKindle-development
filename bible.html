@@ -346,11 +346,7 @@
         <div class="settings-overlay" id="settings-menu">
             <div id="trans-setting">
                 <label for="trans-select">Translation</label>
-                <select id="trans-select" onchange="onTranslationChange()">
-                    <option value="kjv">King James (KJV)</option>
-                    <option value="web" selected>World English (WEB)</option>
-                    <option value="bbe">Basic English (BBE)</option>
-                </select>
+                <select id="trans-select" onchange="onTranslationChange()"></select>
             </div>
             
             <label for="font-size-select">Font Size</label>
@@ -525,19 +521,120 @@ const QURAN_SURAHS = [
     { name: "An-Naas", ar: "سُورَةُ النَّاسِ", verses: 6 },
 ];
 
-        const STATE_VERSION = 3;
+        const STATE_VERSION = 4;
         let currentLibrary = 'bible';
         let currentBookIdx = 0;
         let currentChapter = 1;
         let currentTranslation = 'web';
         let dhammapadaData = null;
+        let dhammapadaThanData = null;
         let taoData = null;
+        let taoMitchellData = null;
+
+        const TRANSLATIONS = {
+            bible: [
+                { id: 'kjv', name: 'King James (KJV)' },
+                { id: 'web', name: 'World English (WEB)' },
+                { id: 'bbe', name: 'Basic English (BBE)' },
+                { id: 'asv', name: 'American Standard (ASV)' },
+                { id: 'darby', name: 'Darby Bible' },
+                { id: 'dra', name: 'Douay-Rheims (DRA)' },
+                { id: 'ylt', name: "Young's Literal (YLT)" },
+                { id: 'oeb-cw', name: 'Open English Bible (CW)' },
+                { id: 'webbe', name: 'World English Bible (UK)' },
+                { id: 'oeb-us', name: 'Open English Bible (US)' },
+                { id: 'clementine', name: 'Clementine Vulgate (Latin)' },
+                { id: 'almeida', name: 'João Ferreira de Almeida (Portuguese)' },
+                { id: 'rccv', name: 'Cornilescu Version (Romanian)' },
+                { id: 'synodal', name: 'Russian Synodal' },
+                { id: 'cherokee', name: 'Cherokee New Testament' },
+                { id: 'cuv', name: 'Chinese Union Version' },
+                { id: 'bkr', name: 'Bible kralická (Czech)' }
+            ],
+            quran: [
+                { id: 'eng-abdelhaleem', name: 'English - Abdel Haleem' },
+                { id: 'eng-yusufaliorig', name: 'English - Yusuf Ali' },
+                { id: 'eng-safiurrahmanalm', name: 'English - Sahih International' },
+                { id: 'eng-muhammadasad', name: 'English - Muhammad Asad' },
+                { id: 'eng-mustafakhattaba', name: 'English - Clear Quran' },
+                { id: 'eng-talalitani', name: 'English - Talal Itani' },
+                { id: 'eng-literal', name: 'English - Literal' },
+                { id: 'ara-quransimple', name: 'Arabic - Simple' },
+                { id: 'ara-quranuthmanihaf', name: 'Arabic - Uthmani' },
+                { id: 'fra-islamicfoundati', name: 'French' },
+                { id: 'deu-aburidamuhammad', name: 'German' },
+                { id: 'spa-abdulqadermouhe', name: 'Spanish' },
+                { id: 'rus-abuadel', name: 'Russian' },
+                { id: 'ind-indonesianislam', name: 'Indonesian' },
+                { id: 'msa-abdullahmuhamma', name: 'Malay' },
+                { id: 'ben-abubakrzakaria', name: 'Bengali' },
+                { id: 'hin-muhammadfarooqk', name: 'Hindi' },
+                { id: 'fas-abdolmohammaday', name: 'Persian' },
+                { id: 'por-helminasr', name: 'Portuguese' },
+                { id: 'ita-hamzarobertopic', name: 'Italian' },
+                { id: 'jpn-ryoichimita', name: 'Japanese' },
+                { id: 'kor-hamidchoi', name: 'Korean' },
+                { id: 'nld-fredleemhuis', name: 'Dutch' },
+                { id: 'pol-jozefabielawski', name: 'Polish' },
+                { id: 'ron-georgegrigore', name: 'Romanian' },
+                { id: 'sin-naseemismailand', name: 'Sinhala' },
+                { id: 'mya-alinuyin', name: 'Burmese' },
+                { id: 'afr-imammabaker', name: 'Afrikaans' },
+                { id: 'amh-muhammedsadiqan', name: 'Amharic' },
+                { id: 'aze-alikhanmusayev', name: 'Azerbaijani' },
+                { id: 'bul-tzvetantheophan', name: 'Bulgarian' },
+                { id: 'ces-arnykl', name: 'Czech' },
+                { id: 'dan-hadiabdollahian', name: 'Danish' },
+                { id: 'fin-unknown', name: 'Finnish' },
+                { id: 'heb-darusalamhousei', name: 'Hebrew' },
+                { id: 'hrv-unknown', name: 'Croatian' },
+                { id: 'hun-drahmedabdelrah', name: 'Hungarian' },
+                { id: 'kaz-khalifahaltai', name: 'Kazakh' },
+                { id: 'kir-shamsaldinhakim', name: 'Kyrgyz' },
+                { id: 'mal-abdulhameedmada', name: 'Malayalam' },
+                { id: 'mar-muhammadshafiia', name: 'Marathi' },
+                { id: 'mkd-macedonianschol', name: 'Macedonian' },
+                { id: 'nep-ahlalhadithcent', name: 'Nepali' },
+                { id: 'nor-einarberg', name: 'Norwegian' },
+                { id: 'pan-drmuhamadhabibb', name: 'Punjabi' },
+                { id: 'slk-hadiabdollahian', name: 'Slovak' },
+                { id: 'som-abdullahhasanja', name: 'Somali' },
+                { id: 'sna-abdullahjmadini', name: 'Shona' },
+                { id: 'sot-sheikheliaskeke', name: 'Sotho' },
+                { id: 'cat-yousseflyoussi', name: 'Catalan' },
+                { id: 'epo-hadiabdollahian', name: 'Esperanto' },
+                { id: 'fil-abdullatifeduar', name: 'Filipino' },
+                { id: 'guj-rabilaalomari', name: 'Gujarati' },
+                { id: 'jav-unknown', name: 'Javanese' },
+                { id: 'kan-abdussalamputhi', name: 'Kannada' },
+                { id: 'lat-hadiabdollahian', name: 'Latin' },
+                { id: 'prs-mawlawimuhammad', name: 'Dari' },
+                { id: 'pus-abdulwalikhan', name: 'Pashto' },
+                { id: 'snd-tajmehmoodamrot', name: 'Sindhi' }
+            ],
+            dhammapada: [
+                { id: 'buddharakkhita', name: 'Acharya Buddharakkhita' },
+                { id: 'thanissaro', name: 'Thanissaro Bhikkhu' }
+            ],
+            tao: [
+                { id: 'legge', name: 'James Legge' },
+                { id: 'mitchell', name: 'Stephen Mitchell' }
+            ]
+        };
+
+        const DEFAULT_TRANSLATIONS = { bible: 'web', quran: 'eng-abdelhaleem', dhammapada: 'buddharakkhita', tao: 'legge' };
 
         function getBooks() {
             if (currentLibrary === 'bible') return BIBLE_BOOKS;
             if (currentLibrary === 'quran') return QURAN_SURAHS.map(s => ({ name: s.name, ch: 1 }));
-            if (currentLibrary === 'dhammapada') return [{ name: 'Dhammapada', ch: dhammapadaData ? dhammapadaData.chapters.length : 26 }];
-            if (currentLibrary === 'tao') return [{ name: 'Tao Te Ching', ch: taoData ? taoData.chapters.length : 81 }];
+            if (currentLibrary === 'dhammapada') {
+                const data = (currentTranslation === 'thanissaro') ? dhammapadaThanData : dhammapadaData;
+                return [{ name: 'Dhammapada', ch: data ? data.chapters.length : 26 }];
+            }
+            if (currentLibrary === 'tao') {
+                const data = (currentTranslation === 'mitchell') ? taoMitchellData : taoData;
+                return [{ name: 'Tao Te Ching', ch: data ? data.chapters.length : 81 }];
+            }
             return [];
         }
 
@@ -547,13 +644,18 @@ const QURAN_SURAHS = [
         }
 
         async function init() {
+            // Pre-load all local scripture data
             try {
-                const [dResp, tResp] = await Promise.all([
+                const [dResp, dThanResp, tResp, tMitchResp] = await Promise.all([
                     fetch('data/dhammapada.json'),
-                    fetch('data/tao-te-ching.json')
+                    fetch('data/dhammapada-than.json'),
+                    fetch('data/tao-te-ching.json'),
+                    fetch('data/tao-te-ching-mitchell.json')
                 ]);
                 dhammapadaData = await dResp.json();
+                dhammapadaThanData = await dThanResp.json();
                 taoData = await tResp.json();
+                taoMitchellData = await tMitchResp.json();
             } catch(e) {}
 
             try {
@@ -564,8 +666,12 @@ const QURAN_SURAHS = [
                         currentLibrary = state.lib || 'bible';
                         currentBookIdx = parseInt(state.b) || 0;
                         currentChapter = parseInt(state.c) || 1;
-                        currentTranslation = state.t || 'web';
-                        document.getElementById('trans-select').value = currentTranslation;
+                        if (state.t && typeof state.t === 'object') {
+                            currentTranslation = state.t[currentLibrary] || DEFAULT_TRANSLATIONS[currentLibrary];
+                        } else {
+                            // v3 fallback: old string format
+                            currentTranslation = state.t || DEFAULT_TRANSLATIONS[currentLibrary];
+                        }
                         const fz = state.fz || '1.2rem';
                         document.getElementById('font-size-select').value = fz;
                         document.getElementById('reader-view').style.fontSize = fz;
@@ -575,6 +681,7 @@ const QURAN_SURAHS = [
 
             document.getElementById('lib-select').value = currentLibrary;
             updateUIForLibrary();
+            document.getElementById('trans-select').value = currentTranslation;
             populateBooks();
             populateChapters();
             updateNavButtons();
@@ -584,19 +691,34 @@ const QURAN_SURAHS = [
         function saveState() {
             try {
                 const fontSz = document.getElementById('font-size-select').value;
-                localStorage.setItem('rekindle_scriptures_state', JSON.stringify({
-                    v: STATE_VERSION,
-                    lib: currentLibrary,
-                    b: currentBookIdx,
-                    c: currentChapter,
-                    t: currentTranslation,
-                    fz: fontSz
-                }));
+                let state = JSON.parse(localStorage.getItem('rekindle_scriptures_state') || '{}');
+                if (state.v !== STATE_VERSION) state = { v: STATE_VERSION, t: {} };
+                if (!state.t || typeof state.t !== 'object') state.t = {};
+                state.lib = currentLibrary;
+                state.b = currentBookIdx;
+                state.c = currentChapter;
+                state.t[currentLibrary] = currentTranslation;
+                state.fz = fontSz;
+                localStorage.setItem('rekindle_scriptures_state', JSON.stringify(state));
             } catch(e) {}
         }
 
         function updateUIForLibrary() {
-            document.getElementById('trans-setting').style.display = (currentLibrary === 'bible') ? 'block' : 'none';
+            const transSelect = document.getElementById('trans-select');
+            const transOptions = TRANSLATIONS[currentLibrary];
+            if (transOptions && transOptions.length > 0) {
+                document.getElementById('trans-setting').style.display = 'block';
+                transSelect.innerHTML = '';
+                for (let i = 0; i < transOptions.length; i++) {
+                    const opt = document.createElement('option');
+                    opt.value = transOptions[i].id;
+                    opt.textContent = transOptions[i].name;
+                    transSelect.appendChild(opt);
+                }
+                transSelect.value = currentTranslation;
+            } else {
+                document.getElementById('trans-setting').style.display = 'none';
+            }
             const chSelect = document.getElementById('ch-select');
             const chCustom = chSelect.nextElementSibling;
             if (chCustom && chCustom.classList.contains('custom-select-container')) {
@@ -622,13 +744,16 @@ const QURAN_SURAHS = [
             const chSelect = document.getElementById('ch-select');
             chSelect.innerHTML = '';
             const maxCh = getMaxChapter();
-            if (currentLibrary === 'dhammapada' && dhammapadaData) {
-                for (let i = 1; i <= maxCh; i++) {
-                    const title = dhammapadaData.chapters[i - 1].title;
-                    const opt = document.createElement('option');
-                    opt.value = i;
-                    opt.textContent = 'Ch ' + i + ': ' + title;
-                    chSelect.appendChild(opt);
+            if (currentLibrary === 'dhammapada') {
+                const data = (currentTranslation === 'thanissaro') ? dhammapadaThanData : dhammapadaData;
+                if (data) {
+                    for (let i = 1; i <= maxCh; i++) {
+                        const title = data.chapters[i - 1].title;
+                        const opt = document.createElement('option');
+                        opt.value = i;
+                        opt.textContent = 'Ch ' + i + ': ' + title;
+                        chSelect.appendChild(opt);
+                    }
                 }
             } else {
                 for (let i = 1; i <= maxCh; i++) {
@@ -647,6 +772,7 @@ const QURAN_SURAHS = [
             currentLibrary = document.getElementById('lib-select').value;
             currentBookIdx = 0;
             currentChapter = 1;
+            currentTranslation = DEFAULT_TRANSLATIONS[currentLibrary] || 'web';
             updateUIForLibrary();
             populateBooks();
             populateChapters();
@@ -768,7 +894,8 @@ const QURAN_SURAHS = [
         async function fetchQuran() {
             const surahNo = currentBookIdx + 1;
             const surah = QURAN_SURAHS[currentBookIdx];
-            const url = 'https://raw.githubusercontent.com/fawazahmed0/quran-api/1/editions/eng-abdelhaleem/' + surahNo + '.json';
+            const edition = currentTranslation || 'eng-abdelhaleem';
+            const url = 'https://raw.githubusercontent.com/fawazahmed0/quran-api/1/editions/' + edition + '/' + surahNo + '.json';
             const response = await fetch(url);
             const data = await response.json();
             let html = '<h2 class="chapter-heading">Surah ' + surahNo + ': ' + escapeHTML(surah.name) + '</h2>';
@@ -781,11 +908,21 @@ const QURAN_SURAHS = [
         }
 
         async function fetchDhammapada() {
-            if (!dhammapadaData) {
-                const resp = await fetch('data/dhammapada.json');
-                dhammapadaData = await resp.json();
+            let data = dhammapadaData;
+            if (currentTranslation === 'thanissaro') {
+                if (!dhammapadaThanData) {
+                    const resp = await fetch('data/dhammapada-than.json');
+                    dhammapadaThanData = await resp.json();
+                }
+                data = dhammapadaThanData;
+            } else {
+                if (!dhammapadaData) {
+                    const resp = await fetch('data/dhammapada.json');
+                    dhammapadaData = await resp.json();
+                }
+                data = dhammapadaData;
             }
-            const chapter = dhammapadaData.chapters[currentChapter - 1];
+            const chapter = data.chapters[currentChapter - 1];
             let html = '<h2 class="chapter-heading">Ch ' + currentChapter + ': ' + escapeHTML(chapter.title) + '</h2>';
             for (let i = 0; i < chapter.verses.length; i++) {
                 const v = chapter.verses[i];
@@ -795,11 +932,21 @@ const QURAN_SURAHS = [
         }
 
         async function fetchTao() {
-            if (!taoData) {
-                const resp = await fetch('data/tao-te-ching.json');
-                taoData = await resp.json();
+            let data = taoData;
+            if (currentTranslation === 'mitchell') {
+                if (!taoMitchellData) {
+                    const resp = await fetch('data/tao-te-ching-mitchell.json');
+                    taoMitchellData = await resp.json();
+                }
+                data = taoMitchellData;
+            } else {
+                if (!taoData) {
+                    const resp = await fetch('data/tao-te-ching.json');
+                    taoData = await resp.json();
+                }
+                data = taoData;
             }
-            const chapter = taoData.chapters[currentChapter - 1];
+            const chapter = data.chapters[currentChapter - 1];
             let html = '<h2 class="chapter-heading">Chapter ' + chapter.no + '</h2>';
             const paragraphs = chapter.text.split('\n\n');
             for (let i = 0; i < paragraphs.length; i++) {
