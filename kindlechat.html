@@ -2434,8 +2434,18 @@
             var modControlsHtml = '';
             if (currentUser && currentUsername === 'ukiyo') {
                 if (settings.showAdminTools) {
-                    // Escape single quotes in text for the function call
-                    var safeText = msg.text ? escapeHtml(msg.text).replace(/\\/g, '\\\\\\\\').replace(/'/g, "\\'") : "";
+                    // Escape for JS string literal (single-quoted) inside HTML attribute (double-quoted)
+                    var safeText = msg.text
+                        ? msg.text
+                            .replace(/\\/g, '\\\\\\\\')
+                            .replace(/'/g, "\\'")
+                            .replace(/\n/g, '\\n')
+                            .replace(/\r/g, '\\r')
+                            .replace(/&/g, '&amp;')
+                            .replace(/</g, '&lt;')
+                            .replace(/>/g, '&gt;')
+                            .replace(/"/g, '&quot;')
+                        : "";
 
                     // Reprocess Button
                     if (currentRoomId === 'general') {
