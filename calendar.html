@@ -118,6 +118,10 @@
             font-weight: bold;
             z-index: 1;
             font-size: 1.1rem;
+            display: inline-flex;
+            align-items: center;
+            height: 100%;
+            box-sizing: border-box;
         }
 
         .close-box {
@@ -320,6 +324,32 @@
             color: red;
         }
 
+        .cal-bar {
+            width: 6px;
+            align-self: stretch;
+            margin-right: 10px;
+            flex-shrink: 0;
+        }
+        .cal-bar-0 { display: none; }
+        .cal-bar-1 { background: black; }
+        .cal-bar-2 { background: repeating-linear-gradient(0deg, black, black 1px, transparent 1px, transparent 3px); }
+        .cal-bar-3 { background: repeating-linear-gradient(0deg, black, black 2px, transparent 2px, transparent 4px); }
+        .cal-bar-4 { background: linear-gradient(to right, black 0px, black 2px, transparent 2px, transparent 4px, black 4px, black 6px); }
+        .cal-bar-5 { background: white; }
+        .cal-bar-6 { background: repeating-linear-gradient(0deg, white, white 1px, transparent 1px, transparent 3px); }
+        .cal-bar-7 { background: repeating-linear-gradient(0deg, white, white 2px, transparent 2px, transparent 4px); }
+        .cal-bar-8 { background: linear-gradient(to right, white 0px, white 2px, transparent 2px, transparent 4px, white 4px, white 6px); }
+
+        /* Reversed agenda row styles */
+        .event.cal-style-5,
+        .event.cal-style-6,
+        .event.cal-style-7,
+        .event.cal-style-8 {
+            background: black;
+            color: white;
+            border-bottom: 1px solid white;
+        }
+
         /* NAV HEADER (For Month/Day) */
         .nav-header {
             display: flex;
@@ -395,8 +425,8 @@
         }
 
         /* Remove right border on last col */
-        .calendar-day:active {
-            background: #000;
+        .calendar-day .day-number:active {
+            background: black;
             color: white;
         }
 
@@ -431,9 +461,7 @@
             border-radius: 50%;
         }
 
-        .calendar-day:active .event-dot {
-            background: white;
-        }
+
 
         .month-event {
             font-size: 0.7rem;
@@ -447,10 +475,140 @@
             cursor: pointer;
         }
 
-        .calendar-day:active .month-event {
+
+
+        /* Calendar style variations for different calendars in B&W */
+        .month-event.cal-style-1, .day-event-chip.cal-style-1 {
             background: white;
             color: black;
+            border: 2px solid black;
         }
+        .month-event.cal-style-2, .day-event-chip.cal-style-2 {
+            background: white;
+            color: black;
+            border: 2px dotted black;
+        }
+        .month-event.cal-style-3, .day-event-chip.cal-style-3 {
+            background: white;
+            color: black;
+            border: 2px dashed black;
+        }
+        .month-event.cal-style-4, .day-event-chip.cal-style-4 {
+            background: white;
+            color: black;
+            border: 2px solid black;
+            border-radius: 8px;
+        }
+
+        /* Reversed calendar style variations (black fill) */
+        .month-event.cal-style-5, .day-event-chip.cal-style-5 {
+            background: black;
+            color: white;
+            border: 2px solid white;
+        }
+        .month-event.cal-style-6, .day-event-chip.cal-style-6 {
+            background: black;
+            color: white;
+            border: 2px dotted white;
+        }
+        .month-event.cal-style-7, .day-event-chip.cal-style-7 {
+            background: black;
+            color: white;
+            border: 2px dashed white;
+        }
+        .month-event.cal-style-8, .day-event-chip.cal-style-8 {
+            background: black;
+            color: white;
+            border: 2px solid white;
+            border-radius: 8px;
+        }
+
+        .rekindle-checkbox {
+            width: 18px;
+            height: 18px;
+            border: 2px solid black;
+            background: white;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            margin-right: 10px;
+            box-shadow: 2px 2px 0 black;
+        }
+        .rekindle-checkbox.checked {
+            background: black;
+        }
+        .rekindle-checkbox.checked::after {
+            content: "";
+            display: block;
+            width: 4px;
+            height: 9px;
+            border: solid white;
+            border-width: 0 2px 2px 0;
+            transform: rotate(45deg);
+            margin-bottom: 2px;
+        }
+
+        .style-preview {
+            width: 18px;
+            height: 18px;
+            margin-right: 5px;
+            margin-top: 2px;
+            cursor: pointer;
+            border: 1px solid #999;
+            flex-shrink: 0;
+            box-sizing: border-box;
+        }
+        .style-preview.selected {
+            box-shadow: 0 0 0 2px black;
+        }
+
+        .style-dropdown {
+            position: absolute;
+            right: 0;
+            top: 100%;
+            margin-top: 5px;
+            background: white;
+            border: 2px solid black;
+            box-shadow: 4px 4px 0 black;
+            padding: 10px;
+            z-index: 10003;
+        }
+
+        .style-btn {
+            background: white;
+            color: black;
+            border: 2px solid black;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 0.9rem;
+            cursor: pointer;
+            line-height: 1;
+            flex-shrink: 0;
+            box-shadow: 2px 2px 0 black;
+            font-family: inherit;
+            padding: 0;
+        }
+        .style-btn:active {
+            background: black;
+            color: white;
+            transform: translate(1px, 1px);
+            box-shadow: none;
+        }
+        .style-preview.cal-style-1 { background: white; border: 2px solid black; }
+        .style-preview.cal-style-2 { background: white; border: 2px dotted black; }
+        .style-preview.cal-style-3 { background: white; border: 2px dashed black; }
+        .style-preview.cal-style-4 { background: white; border: 2px solid black; border-radius: 4px; }
+        .style-preview.cal-style-5 { background: black; border: 2px solid white; }
+        .style-preview.cal-style-6 { background: black; border: 2px dotted white; }
+        .style-preview.cal-style-7 { background: black; border: 2px dashed white; }
+        .style-preview.cal-style-8 { background: black; border: 2px solid white; border-radius: 4px; }
 
         /* DAY VIEW */
         .day-schedule {
@@ -645,6 +803,10 @@
             flex-direction: column;
         }
 
+        #calendar-list-modal .modal-box.window-style {
+            width: 460px;
+        }
+
         .modal-box.window-style .title-bar {
             margin: 0;
             border-bottom: 2px solid black;
@@ -691,6 +853,7 @@
             background: white;
             box-shadow: inset 2px 2px 0 #eee;
             margin: 0;
+            min-width: 0;
         }
 
         .time-inputs {
@@ -709,6 +872,8 @@
         .to-label {
             font-weight: bold;
             font-size: 0.8rem;
+            padding: 0 4px;
+            white-space: nowrap;
         }
 
         .modal-btns {
@@ -775,7 +940,6 @@
         </div>
     </div>
 
-    <!-- ADD MODAL -->
     <!-- ADD/EDIT MODAL -->
     <div id="modal-overlay">
         <div class="modal-box window-style">
@@ -822,7 +986,6 @@
             </div>
         </div>
     </div>
-    </div>
 
     <!-- CALENDAR LIST MODAL -->
     <div id="calendar-list-modal"
@@ -831,17 +994,17 @@
             <div class="title-bar">
                 <div class="title-stripes"></div>
                 <span class="title-text">Calendars</span>
-                <div class="close-box" onclick="document.getElementById('calendar-list-modal').style.display='none'">X
+                <div class="close-box" onclick="document.querySelectorAll('.style-dropdown').forEach(d=>d.remove()); document.getElementById('calendar-list-modal').style.display='none'">X
                 </div>
             </div>
             <div class="modal-content">
-                <div id="calendar-list-container" style="max-height: 300px; overflow-y: auto; text-align: left;">
+                <div id="calendar-list-container" style="max-height: calc(80vh - 160px); overflow-y: auto; text-align: left;">
                     <!-- Checkboxes injected here -->
                 </div>
                 <div class="modal-btns">
                     <button class="sys-btn" onclick="saveCalendarSelection()">Save</button>
                     <button class="sys-btn"
-                        onclick="document.getElementById('calendar-list-modal').style.display='none'">Cancel</button>
+                        onclick="document.querySelectorAll('.style-dropdown').forEach(d=>d.remove()); document.getElementById('calendar-list-modal').style.display='none'">Cancel</button>
                 </div>
             </div>
         </div>
@@ -971,6 +1134,12 @@
                 if (saved) selectedCalendarIds = JSON.parse(saved);
             } catch (e) { console.error("Error loading saved calendars", e); }
 
+            // Load saved calendar styles
+            try {
+                const savedStyles = localStorage.getItem('rekindle_calendar_styles_v2');
+                if (savedStyles) calendarStyleAssignments = JSON.parse(savedStyles);
+            } catch (e) { console.error("Error loading saved calendar styles", e); }
+
 
             // Note: Persistence disabled due to IndexedDB hangs on some browsers (Safari)
 
@@ -990,6 +1159,10 @@
                             }
                             if (data.google_calendar !== undefined) {
                                 localStorage.setItem('rekindle_google_calendar_enabled', data.google_calendar);
+                            }
+                            if (data.calendar_styles_v2) {
+                                calendarStyleAssignments = data.calendar_styles_v2;
+                                localStorage.setItem('rekindle_calendar_styles_v2', JSON.stringify(calendarStyleAssignments));
                             }
                         }
                     } catch (e) {
@@ -1157,16 +1330,13 @@
                         timeStr = `${startStr} – ${endStr}`;
                     }
 
-                    // Add delete button only for Native mode (not google, not caldav)
-                    // For Google, we allow delete but it syncs
-                    const canDelete = googleEnabled || (!calDavUrl);
-
-                    const delBtn = (canDelete) ? `<span class="del-event-btn" onclick="deleteEvent('${e.id}', '${e.calendarId || ''}')">×</span>` : '';
+                    const styleIdx = e.calendarId ? getCalendarStyle(e.calendarId) : 0;
+                    const styleClass = e.calendarId ? 'cal-style-' + styleIdx : '';
                     html += `
-                        <div class="event" onclick="editEvent('${e.id}')" style="cursor:pointer">
+                        <div class="event ${styleClass}" onclick="editEvent('${e.id}')" style="cursor:pointer">
+                            <div class="cal-bar cal-bar-${styleIdx}"></div>
                             <div class="event-time">${timeStr}</div>
                             <div class="event-title">${e.title}</div>
-                            ${delBtn}
                         </div>
                     `;
                 });
@@ -1243,7 +1413,13 @@
                 let eventsHtml = '';
                 for (let j = 0; j < dayEvents.length; j++) {
                     const evt = dayEvents[j];
-                    eventsHtml += `<div class="month-event" onclick="editEvent('${evt.id}', event)">${evt.title}</div>`;
+                    const styleClass = evt.calendarId ? 'cal-style-' + getCalendarStyle(evt.calendarId) : '';
+                    let label = evt.title;
+                    if (!evt.isAllDay && evt.start) {
+                        const t = formatZonedTime(evt.start);
+                        label = t + ' ' + label;
+                    }
+                    eventsHtml += `<div class="month-event ${styleClass}" onclick="editEvent('${evt.id}', event)">${label}</div>`;
                 }
 
                 cell.innerHTML = `<div class="day-number">${i}</div><div class="day-events">${eventsHtml}</div>`;
@@ -1306,7 +1482,8 @@
                                 const endStr = e.end ? formatZonedTime(e.end) : formatZonedTime(new Date(new Date(e.start).getTime() + 3600000));
                                 timeStr = `${startStr} – ${endStr}`;
                             }
-                            eventHtml += `<div class="day-event-chip" onclick="editEvent('${e.id}')" style="cursor:pointer">${timeStr} - ${e.title}</div>`;
+                            const styleClass = e.calendarId ? 'cal-style-' + getCalendarStyle(e.calendarId) : '';
+                            eventHtml += `<div class="day-event-chip ${styleClass}" onclick="editEvent('${e.id}')" style="cursor:pointer">${timeStr} - ${e.title}</div>`;
                         });
 
                         slot.innerHTML = `
@@ -1357,6 +1534,29 @@
             }
 
             btn.style.display = isToday ? 'none' : 'inline-block';
+        }
+
+        const calendarStyleMap = {};
+        let calendarStyleAssignments = {};
+        function getCalendarStyle(calendarId) {
+            if (!calendarId) return 0;
+            // Check user assignment first
+            if (calendarStyleAssignments[calendarId] !== undefined) {
+                return calendarStyleAssignments[calendarId];
+            }
+            // Fall back to hash-based auto assignment
+            if (calendarStyleMap[calendarId] !== undefined) return calendarStyleMap[calendarId];
+            let hash = 0;
+            for (let i = 0; i < calendarId.length; i++) {
+                hash = ((hash << 5) - hash) + calendarId.charCodeAt(i);
+                hash |= 0;
+            }
+            // Auto-assignment order: solid white, solid black, dotted white, dotted black,
+            //                        dashed white, dashed black, rounded white, rounded black
+            const assignmentOrder = [1, 5, 2, 6, 3, 7, 4, 8];
+            const style = assignmentOrder[Math.abs(hash) % 8];
+            calendarStyleMap[calendarId] = style;
+            return style;
         }
 
         // ==========================================
@@ -1433,43 +1633,155 @@
             container.innerHTML = '';
 
             calendars.forEach(cal => {
-                const div = document.createElement('div');
-                div.style.padding = '8px';
-                div.style.borderBottom = '1px solid #ccc';
-                div.style.display = 'flex';
-                div.style.alignItems = 'center';
+                const row = document.createElement('div');
+                row.style.display = 'flex';
+                row.style.flexDirection = 'column';
+                row.style.padding = '12px';
+                row.style.borderBottom = '2px solid #ccc';
+                row.style.position = 'relative';
 
-                const checkbox = document.createElement('input');
-                checkbox.type = 'checkbox';
-                checkbox.style.marginRight = '10px';
-                checkbox.style.width = 'auto'; // override default full width
-                checkbox.value = cal.id;
-                if (selectedCalendarIds.includes(cal.id)) checkbox.checked = true;
+                // Top row: checkbox + name + style button
+                const topRow = document.createElement('div');
+                topRow.style.display = 'flex';
+                topRow.style.alignItems = 'center';
+
+                const checkbox = document.createElement('div');
+                checkbox.className = 'rekindle-checkbox';
+                if (selectedCalendarIds.includes(cal.id)) checkbox.classList.add('checked');
+                checkbox.dataset.calId = cal.id;
+                checkbox.onclick = () => {
+                    checkbox.classList.toggle('checked');
+                };
 
                 const label = document.createElement('span');
                 label.innerText = cal.summaryOverride || cal.summary;
+                label.style.fontWeight = 'bold';
+                label.style.flexGrow = '1';
+                label.style.marginRight = '10px';
 
-                div.appendChild(checkbox);
-                div.appendChild(label);
-                container.appendChild(div);
+                const currentStyle = getCalendarStyle(cal.id);
+
+                const stylePreview = document.createElement('div');
+                stylePreview.className = 'style-preview cal-style-' + currentStyle;
+                stylePreview.style.width = '24px';
+                stylePreview.style.height = '24px';
+                stylePreview.style.marginRight = '8px';
+                stylePreview.style.cursor = 'pointer';
+
+                stylePreview.onclick = () => {
+                    const existing = document.querySelector('.style-dropdown');
+                    if (existing) {
+                        const sameCal = existing.dataset.calId === cal.id;
+                        existing.remove();
+                        if (sameCal) return;
+                    }
+
+                    const dropdown = document.createElement('div');
+                    dropdown.className = 'style-dropdown';
+                    dropdown.dataset.calId = cal.id;
+
+                    // Position fixed relative to the trigger button
+                    const rect = stylePreview.getBoundingClientRect();
+                    dropdown.style.position = 'fixed';
+                    dropdown.style.left = (rect.right + 4) + 'px';
+                    dropdown.style.top = rect.top + 'px';
+                    dropdown.style.right = 'auto';
+                    dropdown.style.marginTop = '0';
+
+                    function makePreview(s) {
+                        const preview = document.createElement('div');
+                        preview.className = 'style-preview cal-style-' + s;
+                        preview.style.width = '24px';
+                        preview.style.height = '24px';
+                        preview.style.marginRight = '8px';
+                        if (currentStyle === s) preview.classList.add('selected');
+                        preview.onclick = () => {
+                            calendarStyleAssignments[cal.id] = s;
+                            stylePreview.className = 'style-preview cal-style-' + s;
+                            Array.from(dropdown.querySelectorAll('.style-preview')).forEach(child => {
+                                child.classList.remove('selected');
+                            });
+                            preview.classList.add('selected');
+
+                            // Persist and close dropdown only
+                            localStorage.setItem('rekindle_calendar_styles_v2', JSON.stringify(calendarStyleAssignments));
+                            if (currentUser) {
+                                db.collection('users').doc(currentUser.uid).collection('settings').doc('integrations').set({
+                                    calendar_styles_v2: calendarStyleAssignments
+                                }, { merge: true }).catch(e => console.error("Error saving calendar settings:", e));
+                            }
+                            dropdown.remove();
+                        };
+                        return preview;
+                    }
+
+                    // Light group
+                    const lightLabel = document.createElement('div');
+                    lightLabel.innerText = 'Light';
+                    lightLabel.style.fontSize = '0.7rem';
+                    lightLabel.style.fontWeight = 'bold';
+                    lightLabel.style.marginBottom = '5px';
+                    lightLabel.style.textTransform = 'uppercase';
+
+                    const lightRow = document.createElement('div');
+                    lightRow.style.display = 'flex';
+                    lightRow.style.marginBottom = '10px';
+                    for (let s = 1; s <= 4; s++) {
+                        lightRow.appendChild(makePreview(s));
+                    }
+
+                    // Dark group
+                    const darkLabel = document.createElement('div');
+                    darkLabel.innerText = 'Dark';
+                    darkLabel.style.fontSize = '0.7rem';
+                    darkLabel.style.fontWeight = 'bold';
+                    darkLabel.style.marginBottom = '5px';
+                    darkLabel.style.textTransform = 'uppercase';
+
+                    const darkRow = document.createElement('div');
+                    darkRow.style.display = 'flex';
+                    for (let s = 5; s <= 8; s++) {
+                        darkRow.appendChild(makePreview(s));
+                    }
+
+                    dropdown.appendChild(lightLabel);
+                    dropdown.appendChild(lightRow);
+                    dropdown.appendChild(darkLabel);
+                    dropdown.appendChild(darkRow);
+                    document.body.appendChild(dropdown);
+                };
+
+                topRow.appendChild(checkbox);
+                topRow.appendChild(label);
+                topRow.appendChild(stylePreview);
+                row.appendChild(topRow);
+                container.appendChild(row);
             });
 
             document.getElementById('calendar-list-modal').style.display = 'flex';
         }
 
         function saveCalendarSelection() {
-            const checkboxes = document.querySelectorAll('#calendar-list-container input[type="checkbox"]');
+            document.querySelectorAll('.style-dropdown').forEach(d => d.remove());
+            const rows = document.querySelectorAll('#calendar-list-container > div');
             selectedCalendarIds = [];
-            checkboxes.forEach(cb => {
-                if (cb.checked) selectedCalendarIds.push(cb.value);
+            rows.forEach(row => {
+                const checkbox = row.querySelector('.rekindle-checkbox');
+                if (!checkbox) return;
+                const calId = checkbox.dataset.calId;
+                if (checkbox.classList.contains('checked')) {
+                    selectedCalendarIds.push(calId);
+                }
             });
             localStorage.setItem('rekindle_selected_calendars', JSON.stringify(selectedCalendarIds));
+            localStorage.setItem('rekindle_calendar_styles_v2', JSON.stringify(calendarStyleAssignments));
 
             // Save to Firestore
             if (currentUser) {
                 db.collection('users').doc(currentUser.uid).collection('settings').doc('integrations').set({
-                    google_calendar_ids: selectedCalendarIds
-                }, { merge: true }).catch(e => console.error("Error saving calendar selection:", e));
+                    google_calendar_ids: selectedCalendarIds,
+                    calendar_styles_v2: calendarStyleAssignments
+                }, { merge: true }).catch(e => console.error("Error saving calendar settings:", e));
             }
 
             document.getElementById('calendar-list-modal').style.display = 'none';
