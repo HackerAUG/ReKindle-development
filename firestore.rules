@@ -111,6 +111,9 @@ service cloud.firestore {
       match /notes/{docId} {
         allow read, write: if request.auth != null && request.auth.uid == userId;
       }
+      match /quick_notes/{docId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
       match /journal/{docId} {
         allow read, write: if request.auth != null && request.auth.uid == userId;
       }
