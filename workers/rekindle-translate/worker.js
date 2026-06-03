@@ -418,8 +418,72 @@ async function translateWithGoogle(text, targetLang = 'en') {
     }
 }
 
+async function detectLanguageInfo(text) {
+    if (!text || text.trim().length === 0) {
+        return { detectedLang: 'en', confidence: 1, translatedToEn: text };
+    }
+    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=en&dt=t&q=${encodeURIComponent(text)}`;
+    try {
+        const response = await fetch(url);
+        if (!response.ok) {
+            return { detectedLang: 'en', confidence: 1, translatedToEn: text };
+        }
+        const data = await response.json();
+        const detectedLang = data[2] || 'en';
+        const confidence = typeof data[6] === 'number' ? data[6] : 0;
+        let translatedToEn = '';
+        if (data && data[0]) {
+            translatedToEn = data[0].map(chunk => chunk[0]).join('');
+        }
+        return { detectedLang, confidence, translatedToEn };
+    } catch (err) {
+        console.error('Language detection failed:', err);
+        return { detectedLang: 'en', confidence: 1, translatedToEn: text };
+    }
+}
+
+function isProbablyEnglish(original, detectedLang, confidence, translatedToEn) {
+    // If Google says it's English, it is
+    if (detectedLang === 'en') return true;
+
+    // If Google is very confident it's NOT English, trust it
+    if (confidence >= 0.85) return false;
+
+    // Normalize for comparison (strip punctuation and case)
+    const normOrig = original.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const normTrans = (translatedToEn || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+    if (normOrig.length > 0 && normTrans.length > 0) {
+        // If identical after stripping punctuation, it was English
+        if (normOrig === normTrans) return true;
+
+        // If one contains the other and text is short, probably English
+        const longer = Math.max(normOrig.length, normTrans.length);
+        const contained = normOrig.includes(normTrans) || normTrans.includes(normOrig);
+        if (contained && longer < 30) return true;
+    }
+
+    // Low confidence (< 0.75) with mostly Latin/ASCII characters
+    // is a strong signal for English text-speak / funny spellings
+    if (confidence < 0.75 && original.length > 0) {
+        const latinChars = (original.match(/[a-zA-Z\s0-9.,!?;:'"-]/g) || []).length;
+        if (latinChars / original.length > 0.85) return true;
+    }
+
+    return false;
+}
+
 async function translateToAllLanguages(text) {
     if (!text || text.trim().length === 0 || isAsciiEmoji(text)) return null;
+
+    // Detect language first and bail out early if it's probably just English
+    const { detectedLang, confidence, translatedToEn } = await detectLanguageInfo(text);
+
+    if (isProbablyEnglish(text, detectedLang, confidence, translatedToEn)) {
+        console.log(`Assuming English (detected: ${detectedLang}, confidence: ${confidence}): "${text}"`);
+        return null;
+    }
+
     const targetLangs = ['en', 'es', 'pt', 'pl', 'de', 'it', 'fr', 'ru', 'zh', 'vi'];
     const translations = {};
     for (const lang of targetLangs) {
