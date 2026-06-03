@@ -40,6 +40,13 @@ service cloud.firestore {
       allow delete: if request.auth != null && isAgeVerified() && (resource.data.authorId == request.auth.uid || isModerator() || isDeveloper());
     }
 
+    match /topics/{topicId}/pollVotes/{userId} {
+      allow read: if request.auth != null && isAgeVerified();
+      allow create: if request.auth != null && isAgeVerified() && request.auth.uid == userId;
+      allow update: if request.auth != null && isAgeVerified() && request.auth.uid == userId;
+      allow delete: if request.auth != null && isAgeVerified() && (request.auth.uid == userId || isModerator() || isDeveloper());
+    }
+
     // --- NEIGHBOURHOOD POSTS ---
     match /neighbourhood_posts/{postId} {
       allow read: if request.auth != null && isAgeVerified();

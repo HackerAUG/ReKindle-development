@@ -790,6 +790,7 @@ export default {
                 const title = (body.title || "").trim();
                 const subheading = (body.subheading || "").trim();
                 const icon = body.icon;
+                const poll = body.poll || null;
 
                 if (!title || title.length > 20) {
                     return new Response(JSON.stringify({ error: "Title must be 1-20 characters." }), { status: 400, headers });
@@ -799,6 +800,24 @@ export default {
                 }
                 if (!icon || typeof icon !== "string") {
                     return new Response(JSON.stringify({ error: "Icon is required." }), { status: 400, headers });
+                }
+
+                // Validate poll if provided
+                let validatedPoll = null;
+                if (poll && typeof poll === "object") {
+                    const question = (poll.question || "").trim();
+                    const options = Array.isArray(poll.options) ? poll.options.map(o => String(o || "").trim()).filter(o => o.length > 0) : [];
+                    if (question.length < 1 || question.length > 100) {
+                        return new Response(JSON.stringify({ error: "Poll question must be 1-100 characters." }), { status: 400, headers });
+                    }
+                    if (options.length < 2 || options.length > 4) {
+                        return new Response(JSON.stringify({ error: "Poll must have 2-4 options." }), { status: 400, headers });
+                    }
+                    const invalidOption = options.find(o => o.length > 50);
+                    if (invalidOption) {
+                        return new Response(JSON.stringify({ error: "Poll options must be 50 characters or less." }), { status: 400, headers });
+                    }
+                    validatedPoll = { question, options };
                 }
 
                 // Rate limit: 1 topic per day
@@ -831,14 +850,17 @@ export default {
                 }
 
                 // Moderation
-                const textToModerate = title + " " + subheading;
+                let textToModerate = title + " " + subheading;
+                if (validatedPoll) {
+                    textToModerate += " " + validatedPoll.question + " " + validatedPoll.options.join(" ");
+                }
                 const mod = await moderateContent(textToModerate, env.OPENAI_API_KEY);
                 if (mod.flagged) {
                     await logAutomodRejection(uid, "topic", textToModerate, mod.categories, accessToken);
                     return new Response(JSON.stringify({ error: moderationErrorMessage(mod) }), { status: 400, headers });
                 }
 
-                const id = await firestoreCreate("topics", {
+                const topicData = {
                     title,
                     subheading,
                     body: "",
@@ -847,7 +869,11 @@ export default {
                     timestamp: new Date(),
                     lastActive: new Date(),
                     commentCount: 0
-                }, accessToken);
+                };
+                if (validatedPoll) {
+                    topicData.poll = validatedPoll;
+                }
+                const id = await firestoreCreate("topics", topicData, accessToken);
 
                 return new Response(JSON.stringify({ success: true, id }), { status: 200, headers });
             }
