@@ -349,6 +349,25 @@ When adding a new feature that writes to Firebase, you **must** update the corre
 
 Without matching rules, writes will be **silently rejected** by security rules. Always follow the existing patterns in the target file for authenticated-user-only collections.
 
+### 8. URL / Link Blocking in Social Apps
+All social apps (KindleChat, Neighbourhood, Topics) block users from posting URLs and links. This is enforced **both client-side and server-side** (moderation worker).
+
+**Client-side helper** (add to each social app HTML):
+```javascript
+function containsUrl(text) {
+    if (!text) return false;
+    return /https?:\/\/|www\.|\b[a-z0-9-]+\.(com|net|org|io|co|ai|app|dev|edu|gov|mil|int|biz|info|name|pro|museum|aero|coop|jobs|mobi|travel|arpa|asia|cat|tel|xxx|post|geo|mail|onion|bit|crypto|eth|us|uk|au|ca|de|fr|jp|cn|kr|ru|br|mx|es|it|nl|se|no|fi|dk|pl|cz|at|ch|be|pt|ie|nz|za|in|sg|hk|tw|id|th|vn|ph|my)\b/i.test(text);
+}
+```
+
+**Where to block:**
+*   **KindleChat:** `sendMessage()` and `sendGeneralMessageViaWorker()` in `kindlechat.html`
+*   **Neighbourhood:** `submitPost()` and `submitComment()` in `neighbourhood.html`
+*   **Topics:** `submitTopic()` (title, subheading, poll options) and `postComment()` in `topics.html`
+*   **Moderation Worker:** `workers/rekindle-moderate/worker.js` — checks for each `type` handler (`kindlechat`, `topic`, `topic_comment`, `neighbourhood_post`, `neighbourhood_comment`)
+
+**Error message:** Use `"Links and URLs are not allowed."` consistently across all apps.
+
 ## ✅ Best Practices
 -   **Images:** Use **WebP** or **SVG**. They are fully supported and perform best.
 -   **Modals:** Always stick to the `.modal-overlay` / `.modal-box` DOM structure found in `weather.html`.

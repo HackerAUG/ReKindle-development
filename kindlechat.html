@@ -1605,6 +1605,11 @@
             }
         }
 
+        function containsUrl(text) {
+            if (!text) return false;
+            return /https?:\/\/|www\.|\b[a-z0-9-]+\.(com|net|org|io|co|ai|app|dev|edu|gov|mil|int|biz|info|name|pro|museum|aero|coop|jobs|mobi|travel|arpa|asia|cat|tel|xxx|post|geo|mail|onion|bit|crypto|eth|us|uk|au|ca|de|fr|jp|cn|kr|ru|br|mx|es|it|nl|se|no|fi|dk|pl|cz|at|ch|be|pt|ie|nz|za|in|sg|hk|tw|id|th|vn|ph|my)\b/i.test(text);
+        }
+
         // --- ASCII PICKER LOGIC ---
         function initAsciiPicker() {
             var container = document.getElementById('ascii-picker-window');
@@ -2729,6 +2734,7 @@
 
             if (!text) return;
             if (text.length > 1000) { showModal('Messages cannot exceed 1000 characters.'); return; }
+            if (containsUrl(text)) { showModal('Links and URLs are not allowed.'); return; }
 
             checkRules(function () {
                 // Timeout check
@@ -3182,6 +3188,7 @@
                 sendGeneralMessageToRTDB(text);
                 return;
             }
+            if (containsUrl(text)) { showModal('Links and URLs are not allowed.'); return; }
 
             // Write message immediately so it appears at once, then translate in background
             var messageData = {

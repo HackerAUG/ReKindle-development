@@ -210,6 +210,11 @@ async function rtdbGetWithAccessToken(path, env, accessToken) {
     return await resp.json();
 }
 
+function containsUrl(text) {
+    if (!text) return false;
+    return /https?:\/\/|www\.|\b[a-z0-9-]+\.(com|net|org|io|co|ai|app|dev|edu|gov|mil|int|biz|info|name|pro|museum|aero|coop|jobs|mobi|travel|arpa|asia|cat|tel|xxx|post|geo|mail|onion|bit|crypto|eth|us|uk|au|ca|de|fr|jp|cn|kr|ru|br|mx|es|it|nl|se|no|fi|dk|pl|cz|at|ch|be|pt|ie|nz|za|in|sg|hk|tw|id|th|vn|ph|my)\b/i.test(text);
+}
+
 async function checkTimeout(uid, env, userToken, accessToken) {
     try {
         const data = await rtdbGetWithUserToken(`timeouts/${uid}`, env, userToken);
@@ -484,12 +489,15 @@ async function moderateContent(text, apiKey, imageUrl) {
 
     console.log("[MODERATION] OpenAI result — flagged:", moderationResult.flagged, "categories:", JSON.stringify(moderationResult.categories), "scores:", JSON.stringify(moderationResult.categoryScores), "appliedInputTypes:", JSON.stringify(moderationResult.appliedInputTypes));
 
+    // Apply stricter family-friendly thresholds on top of OpenAI's flag.
+    const strictResult = applyStrictModeration(moderationResult);
+
     // Store in cache (text-only)
     if (!imageUrl && text && typeof text === "string") {
-        moderationCache.set(text, { result: moderationResult, expiry: Date.now() + CACHE_TTL_MS });
+        moderationCache.set(text, { result: strictResult, expiry: Date.now() + CACHE_TTL_MS });
     }
 
-    return moderationResult;
+    return strictResult;
 }
 
 /* ------------------------------------------------------------------ */
@@ -572,6 +580,47 @@ function checkPixelArtScores(mod, isPixelArt, gridSize) {
 
     if (anyFlagged) {
         console.log("[MODERATION] Pixel art flagged by custom thresholds (gridSize:", gridSize, "):", JSON.stringify(flaggedCategories));
+        return {
+            ...mod,
+            flagged: true,
+            categories: { ...mod.categories, ...flaggedCategories }
+        };
+    }
+
+    return mod;
+}
+
+// Family-friendly strict thresholds applied to ALL content (text + images).
+// These override OpenAI's default flagged boolean to catch even subtle
+// mentions of adult themes on a kids'/family platform.
+const FAMILY_FRIENDLY_THRESHOLDS = {
+    sexual: 0.0005,
+    "sexual/minors": 0.000001,
+    hate: 0.001,
+    "hate/threatening": 0.0001,
+    harassment: 0.001,
+    "harassment/threatening": 0.0001,
+    "self-harm": 0.001,
+    "self-harm/intent": 0.0001,
+    "self-harm/instructions": 0.000001,
+    violence: 0.005,
+    "violence/graphic": 0.001
+};
+
+function applyStrictModeration(mod) {
+    const flaggedCategories = {};
+    let anyFlagged = false;
+
+    for (const [category, threshold] of Object.entries(FAMILY_FRIENDLY_THRESHOLDS)) {
+        const score = mod.categoryScores[category] || 0;
+        if (score >= threshold) {
+            flaggedCategories[category] = true;
+            anyFlagged = true;
+        }
+    }
+
+    if (anyFlagged) {
+        console.log("[MODERATION] Strict family threshold triggered:", JSON.stringify(flaggedCategories), "scores:", JSON.stringify(mod.categoryScores));
         return {
             ...mod,
             flagged: true,
@@ -731,6 +780,9 @@ export default {
                 if (!trimmed && !hasFlipnote && !hasPixelArt) {
                     return new Response(JSON.stringify({ error: "Empty message" }), { status: 400, headers });
                 }
+                if (containsUrl(trimmed)) {
+                    return new Response(JSON.stringify({ error: "Links and URLs are not allowed." }), { status: 400, headers });
+                }
 
                 // Rate limit
                 const rl = checkRateLimit(`chat:${username}`, 15, 20000);
@@ -801,6 +853,9 @@ export default {
                 if (!icon || typeof icon !== "string") {
                     return new Response(JSON.stringify({ error: "Icon is required." }), { status: 400, headers });
                 }
+                if (containsUrl(title) || containsUrl(subheading)) {
+                    return new Response(JSON.stringify({ error: "Links and URLs are not allowed." }), { status: 400, headers });
+                }
 
                 // Validate poll if provided
                 let validatedPoll = null;
@@ -818,6 +873,11 @@ export default {
                         return new Response(JSON.stringify({ error: "Poll options must be 50 characters or less." }), { status: 400, headers });
                     }
                     validatedPoll = { question, options };
+                }
+                if (validatedPoll) {
+                    if (containsUrl(validatedPoll.question) || validatedPoll.options.some(function(o) { return containsUrl(o); })) {
+                        return new Response(JSON.stringify({ error: "Links and URLs are not allowed." }), { status: 400, headers });
+                    }
                 }
 
                 // Rate limit: 1 topic per day
@@ -889,6 +949,9 @@ export default {
                 if (!rawBody || rawBody.length > 1000) {
                     return new Response(JSON.stringify({ error: "Comment must be 1-1000 characters." }), { status: 400, headers });
                 }
+                if (containsUrl(rawBody)) {
+                    return new Response(JSON.stringify({ error: "Links and URLs are not allowed." }), { status: 400, headers });
+                }
 
                 const commentText = rawBody.replace(/(\n\s*){3,}/g, "\n\n").trim();
 
@@ -945,6 +1008,9 @@ export default {
                 if (trimmed.length > 280) {
                     return new Response(JSON.stringify({ error: "Message too long (max 280 chars)." }), { status: 400, headers });
                 }
+                if (containsUrl(trimmed)) {
+                    return new Response(JSON.stringify({ error: "Links and URLs are not allowed." }), { status: 400, headers });
+                }
 
                 // Moderation
                 const mod = await moderateContent(trimmed, env.OPENAI_API_KEY);
@@ -972,6 +1038,9 @@ export default {
                 }
                 if (trimmed.length < 2 || trimmed.length > 200) {
                     return new Response(JSON.stringify({ error: "Comment must be 2-200 characters." }), { status: 400, headers });
+                }
+                if (containsUrl(trimmed)) {
+                    return new Response(JSON.stringify({ error: "Links and URLs are not allowed." }), { status: 400, headers });
                 }
 
                 // Moderation

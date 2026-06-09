@@ -2335,6 +2335,11 @@
                 .replace(/'/g, "&#039;");
         }
 
+        function containsUrl(text) {
+            if (!text) return false;
+            return /https?:\/\/|www\.|\b[a-z0-9-]+\.(com|net|org|io|co|ai|app|dev|edu|gov|mil|int|biz|info|name|pro|museum|aero|coop|jobs|mobi|travel|arpa|asia|cat|tel|xxx|post|geo|mail|onion|bit|crypto|eth|us|uk|au|ca|de|fr|jp|cn|kr|ru|br|mx|es|it|nl|se|no|fi|dk|pl|cz|at|ch|be|pt|ie|nz|za|in|sg|hk|tw|id|th|vn|ph|my)\b/i.test(text);
+        }
+
         function escapeJs(text) {
             if (text === null || text === undefined) return "";
             return String(text).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
@@ -2843,6 +2848,7 @@
             if (!text) return;
             if (text.length < 2) { showAlertModal("Comment too short."); return; }
             if (text.length > 200) { showAlertModal("Comment too long (max 200 chars)."); return; }
+            if (containsUrl(text)) { showAlertModal("Links and URLs are not allowed."); return; }
 
             // Timeout check
             db.ref('timeouts/' + currentUser.uid).once('value').then(function(snap) {
@@ -3147,6 +3153,8 @@
             if (wordCount < 10) return showAlertModal("Keep it meaningful! Minimum 10 words.");
             // CHECK 2: Max Length
             if (text.length > 280) { showAlertModal("Message too long (max 280 chars)."); return; }
+            // CHECK 2b: No URLs
+            if (containsUrl(text)) { showAlertModal("Links and URLs are not allowed."); return; }
 
             // CHECK 3: Back-to-Back
             if (recentPosts.length > 0 && recentPosts[0].uid === currentUser.uid) {

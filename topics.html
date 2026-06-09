@@ -1426,6 +1426,11 @@
             }
         }
 
+        function containsUrl(text) {
+            if (!text) return false;
+            return /https?:\/\/|www\.|\b[a-z0-9-]+\.(com|net|org|io|co|ai|app|dev|edu|gov|mil|int|biz|info|name|pro|museum|aero|coop|jobs|mobi|travel|arpa|asia|cat|tel|xxx|post|geo|mail|onion|bit|crypto|eth|us|uk|au|ca|de|fr|jp|cn|kr|ru|br|mx|es|it|nl|se|no|fi|dk|pl|cz|at|ch|be|pt|ie|nz|za|in|sg|hk|tw|id|th|vn|ph|my)\b/i.test(text);
+        }
+
         function loadTopicStates() {
             if (!currentUser) return Promise.resolve();
             return db.ref('users_private/' + currentUser.uid + '/topic_states').once('value')
@@ -2490,6 +2495,7 @@
 
                 if (!text || !currentTopicId) return;
                 if (text.length > 1000) { showModal('Messages cannot exceed 1000 characters.'); return; }
+                if (containsUrl(text)) { showAlertModal('Links and URLs are not allowed.'); return; }
 
                 // Timeout check
                 db.ref('timeouts/' + currentUser.uid).once('value').then(function(snap) {
@@ -2816,6 +2822,24 @@
                             showAlertModal(window.t('topics.alert.profanity', "Please keep poll content family-friendly."));
                             return;
                         }
+                    }
+                }
+            }
+
+            // URL Check
+            if (containsUrl(title) || containsUrl(subheading)) {
+                showAlertModal("Links and URLs are not allowed.");
+                return;
+            }
+            if (pollData) {
+                if (containsUrl(pollData.question)) {
+                    showAlertModal("Links and URLs are not allowed.");
+                    return;
+                }
+                for (var urlIdx = 0; urlIdx < pollData.options.length; urlIdx++) {
+                    if (containsUrl(pollData.options[urlIdx])) {
+                        showAlertModal("Links and URLs are not allowed.");
+                        return;
                     }
                 }
             }
