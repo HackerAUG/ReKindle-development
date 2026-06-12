@@ -5,10 +5,16 @@
                 ".read": false,
                 ".write": false
             },
-            "user_limits": {
-                "$username": {
-                    ".read": "auth != null && auth.token.email.beginsWith($username + '@') && (auth.token.ageVerified == true || auth.token.email === 'ukiyo@rekindle.ink')",
-                    ".write": "auth.token.email === 'ukiyo@rekindle.ink'"
+            "server_rate_limits": {
+                "$uid": {
+                    ".read": "auth.uid === $uid || auth.token.email === 'ukiyo@rekindle.ink'",
+                    ".write": "auth.token.email.matches(/^.*@rekindle-socials\\.iam\\.gserviceaccount\\.com$/) || auth.token.email === 'ukiyo@rekindle.ink'"
+                }
+            },
+            "user_recent": {
+                "$uid": {
+                    ".read": "auth.uid === $uid || auth.token.email === 'ukiyo@rekindle.ink'",
+                    ".write": "auth.token.email.matches(/^.*@rekindle-socials\\.iam\\.gserviceaccount\\.com$/) || auth.token.email === 'ukiyo@rekindle.ink'"
                 }
             },
             "translations_by_lang": {

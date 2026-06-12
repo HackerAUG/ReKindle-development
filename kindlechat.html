@@ -1363,7 +1363,8 @@
         var isModeratorMode = false;
 
         // --- SPAM PROTECTION FOR GENERAL CHANNEL ---
-        // (Replaced by shared js/chat-limits.js utility)
+        // Server-side RTDB token-bucket rate limiting and per-user duplicate
+        // detection now enforced in the moderation worker (rekindle-moderate).
 
         // --- Rules Logic ---
         var RULES_VERSION = 1; // Current Rules Version

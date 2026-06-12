@@ -12,3 +12,6 @@ region = "gcp:us-east4"
 # npx wrangler secret put OPENAI_API_KEY
 # npx wrangler secret put SOCIAL_SERVICE_ACCOUNT_JSON
 # npx wrangler secret put FIREBASE_PROJECT_ID
+# npx wrangler secret put DISCORD_BOT_TOKEN
+# npx wrangler secret put DISCORD_CHANNEL_ID
+# npx wrangler secret put DISCORD_PUBLIC_KEY

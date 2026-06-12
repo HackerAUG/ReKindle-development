@@ -864,7 +864,190 @@ async function logAutomodRejection(uid, contentType, text, categories, accessTok
 }
 
 /* ------------------------------------------------------------------ */
-/*  RATE LIMITING (in-memory, per-isolate)                             */
+/*  RATE LIMITING (RTDB-backed token bucket, global)                   */
+/* ------------------------------------------------------------------ */
+// Per-user, per-content-type token-bucket state lives in the social RTDB
+// so it is shared across all Cloudflare Worker isolates and cannot be
+// bypassed by parallel requests or different regions.
+const RATE_LIMIT_CONFIG = {
+    kindlechat: { capacity: 5, refillMs: 12000 },
+    topic: { capacity: 3, refillMs: 28800000 },      // 8 hours
+    topic_comment: { capacity: 5, refillMs: 12000 },  // match kindlechat
+    neighbourhood_post: { capacity: 5, refillMs: 300000 },
+    neighbourhood_comment: { capacity: 10, refillMs: 30000 },
+    report: { capacity: 5, refillMs: 720000 }         // 12 minutes = 5/hr
+};
+
+async function rtdbSocialGet(path, accessToken) {
+    const url = `https://rekindle-socials-default-rtdb.firebaseio.com/${path}.json`;
+    const resp = await fetch(url, {
+        method: "GET",
+        headers: {
+            "Accept": "application/json",
+            "Authorization": `Bearer ${accessToken}`
+        }
+    });
+    const etag = resp.headers.get("ETag") || resp.headers.get("etag");
+    if (!resp.ok) {
+        const errText = await resp.text();
+        throw new Error(`RTDB get failed (${resp.status}): ${errText}`);
+    }
+    const data = await resp.json();
+    return { data, etag };
+}
+
+async function rtdbSocialPut(path, data, etag, accessToken) {
+    const url = `https://rekindle-socials-default-rtdb.firebaseio.com/${path}.json`;
+    const headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "Authorization": `Bearer ${accessToken}`
+    };
+    if (etag) headers["If-Match"] = etag;
+    const resp = await fetch(url, {
+        method: "PUT",
+        headers,
+        body: JSON.stringify(data)
+    });
+    if (resp.status === 412) {
+        return { ok: false, conflict: true };
+    }
+    if (!resp.ok) {
+        const errText = await resp.text();
+        throw new Error(`RTDB put failed (${resp.status}): ${errText}`);
+    }
+    return { ok: true };
+}
+
+async function rtdbSocialPutSimple(path, data, accessToken) {
+    const url = `https://rekindle-socials-default-rtdb.firebaseio.com/${path}.json`;
+    const resp = await fetch(url, {
+        method: "PUT",
+        headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${accessToken}`
+        },
+        body: JSON.stringify(data)
+    });
+    if (!resp.ok) {
+        const errText = await resp.text();
+        console.error("[DEDUPE] Failed to record recent content:", resp.status, errText);
+    }
+}
+
+async function consumeRateLimitToken(uid, contentType, accessToken) {
+    const config = RATE_LIMIT_CONFIG[contentType];
+    if (!config) return { allowed: true };
+
+    const path = `kindlechat/server_rate_limits/${uid}/${contentType}`;
+    const maxRetries = 5;
+    const baseBackoffMs = 25;
+
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+        const { data, etag } = await rtdbSocialGet(path, accessToken);
+        const now = Date.now();
+
+        let bucket;
+        if (data && typeof data.tokens === "number" && typeof data.lastRefill === "number") {
+            bucket = data;
+        } else {
+            bucket = { tokens: config.capacity, lastRefill: now };
+        }
+
+        // Refill tokens based on elapsed time
+        const elapsed = now - bucket.lastRefill;
+        const refills = Math.floor(elapsed / config.refillMs);
+        bucket.tokens = Math.min(config.capacity, bucket.tokens + refills);
+        bucket.lastRefill = bucket.lastRefill + (refills * config.refillMs);
+
+        if (bucket.tokens < 1) {
+            const retryAfter = config.refillMs - ((now - bucket.lastRefill) % config.refillMs);
+            return { allowed: false, retryAfter: Math.ceil(retryAfter / 1000) };
+        }
+
+        bucket.tokens -= 1;
+        bucket.updatedAt = now;
+
+        const putResult = await rtdbSocialPut(path, bucket, etag, accessToken);
+        if (putResult.ok) {
+            return { allowed: true };
+        }
+
+        // 412 conflict — another isolate updated the bucket. Retry with backoff.
+        const backoff = baseBackoffMs * Math.pow(2, attempt);
+        await new Promise(r => setTimeout(r, backoff));
+    }
+
+    // Too many conflicts. Be safe and reject.
+    return { allowed: false, retryAfter: Math.ceil(config.refillMs / 1000) };
+}
+
+/* ------------------------------------------------------------------ */
+/*  DUPLICATE / REPETITIVE CONTENT DETECTION (per-user, per-type)      */
+/* ------------------------------------------------------------------ */
+// Stores a normalized hash of recently-submitted text under
+// kindlechat/user_recent/{uid}/{contentType}/{hash} -> timestamp.
+// Identical or near-identical messages sent within 5 minutes are rejected.
+const DUPLICATE_WINDOW_MS = 5 * 60 * 1000;
+
+function normalizeForDedupe(text) {
+    if (!text) return "";
+    return String(text)
+        .toLowerCase()
+        .replace(/[\u0000-\u001F\u007F-\u009F]/g, " ")
+        .replace(/[^\p{L}\p{N}\s]/gu, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+}
+
+function hashDedupeKey(text) {
+    const normalized = normalizeForDedupe(text);
+    let hash = 5381;
+    for (let i = 0; i < normalized.length; i++) {
+        hash = ((hash << 5) + hash) + normalized.charCodeAt(i);
+    }
+    return String(hash >>> 0);
+}
+
+async function checkUserRecentContent(uid, contentType, text, accessToken) {
+    const hash = hashDedupeKey(text);
+    if (!hash) return { duplicate: false };
+    const path = `kindlechat/user_recent/${uid}/${contentType}/${hash}`;
+    const { data } = await rtdbSocialGet(path, accessToken);
+    const now = Date.now();
+    if (data && typeof data.timestamp === "number" && (now - data.timestamp) < DUPLICATE_WINDOW_MS) {
+        return { duplicate: true, retryAfter: Math.ceil((DUPLICATE_WINDOW_MS - (now - data.timestamp)) / 1000) };
+    }
+    return { duplicate: false };
+}
+
+async function recordUserRecentContent(uid, contentType, text, accessToken) {
+    const hash = hashDedupeKey(text);
+    if (!hash) return;
+    const path = `kindlechat/user_recent/${uid}/${contentType}/${hash}`;
+    await rtdbSocialPutSimple(path, { timestamp: Date.now() }, accessToken);
+}
+
+async function cleanupUserRecentContent(uid, contentType, accessToken) {
+    try {
+        const path = `kindlechat/user_recent/${uid}/${contentType}`;
+        const { data } = await rtdbSocialGet(path, accessToken);
+        if (!data || typeof data !== "object") return;
+        const now = Date.now();
+        const deletes = [];
+        for (const [hash, entry] of Object.entries(data)) {
+            if (entry && typeof entry.timestamp === "number" && (now - entry.timestamp) > DUPLICATE_WINDOW_MS) {
+                deletes.push(rtdbDeleteWithAccessToken(`${path}/${hash}`, accessToken));
+            }
+        }
+        await Promise.all(deletes);
+    } catch (e) {
+        console.error("[DEDUPE] Cleanup failed:", e.message);
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/*  LEGACY IN-MEMORY RATE LIMITER (kept for non-social types)          */
 /* ------------------------------------------------------------------ */
 const rateLimits = new Map();
 
@@ -894,22 +1077,24 @@ function checkRateLimit(key, maxTokens, refillMs) {
 /*  DISCORD NOTIFICATIONS                                              */
 /* ------------------------------------------------------------------ */
 async function sendDiscordReportNotification(env, reportData) {
-    const webhookUrl = env.DISCORD_WEBHOOK_URL;
-    if (!webhookUrl) {
-        console.log("[REPORT] DISCORD_WEBHOOK_URL not configured, skipping notification");
+    const botToken = env.DISCORD_BOT_TOKEN;
+    const channelId = env.DISCORD_CHANNEL_ID;
+    
+    if (!botToken || !channelId) {
+        console.log("[REPORT] DISCORD_BOT_TOKEN or DISCORD_CHANNEL_ID not configured, skipping notification");
         return;
     }
     
-    const truncatedSnapshot = reportData.contentSnapshot 
+    const truncatedSnapshot = reportData.contentSnapshot
         ? reportData.contentSnapshot.substring(0, 500).replace(/```/g, "` ` `") + (reportData.contentSnapshot.length > 500 ? "..." : "")
         : "No preview available";
     
     const isAutoDeleted = reportData.autoDeleted === true;
-    const title = isAutoDeleted 
+    const title = isAutoDeleted
         ? (reportData.deleteSuccess ? "AUTO-DELETED: Content Removed" : "AUTO-DELETE FAILED")
         : "New Content Report";
-    const color = isAutoDeleted 
-        ? (reportData.deleteSuccess ? 3066993 : 15158332) // Green if deleted, orange if failed
+    const color = isAutoDeleted
+        ? (reportData.deleteSuccess ? 3066993 : 15158332)
         : 15158332;
     
     const fields = [
@@ -938,48 +1123,52 @@ async function sendDiscordReportNotification(env, reportData) {
         footer: { text: "ReKindle Moderation" }
     };
     
-    // Build action row with buttons (only for non-auto-deleted content)
-    const components = [];
+    const payload = { embeds: [embed] };
+    
+    // Add action buttons (only for non-auto-deleted content)
     if (!isAutoDeleted) {
         const actionId = `${reportData.contentType}:${reportData.contentId}:${reportData.reportedUserId || ""}`;
-        components.push({
-            type: 1, // Action Row
+        payload.components = [{
+            type: 1,
             components: [
                 {
-                    type: 2, // Button
-                    style: 4, // Danger (red)
+                    type: 2,
+                    style: 4,
                     label: "Delete Content",
                     custom_id: `delete:${actionId}`,
                     emoji: { name: "🗑️" }
                 },
                 {
                     type: 2,
-                    style: 3, // Success (green)
+                    style: 3,
                     label: "Timeout User (24h)",
                     custom_id: `timeout:${actionId}`,
                     emoji: { name: "⏰" }
                 },
                 {
                     type: 2,
-                    style: 2, // Secondary (grey)
+                    style: 2,
                     label: "Dismiss Report",
                     custom_id: `dismiss:${actionId}`,
                     emoji: { name: "✅" }
                 }
             ]
-        });
+        }];
     }
     
     try {
-        const payload = { embeds: [embed] };
-        if (components.length > 0) {
-            payload.components = components;
-        }
-        await fetch(webhookUrl, {
+        const resp = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: {
+                "Authorization": `Bot ${botToken}`,
+                "Content-Type": "application/json"
+            },
             body: JSON.stringify(payload)
         });
+        if (!resp.ok) {
+            const errText = await resp.text();
+            console.error("[REPORT] Discord bot notification failed:", resp.status, errText);
+        }
     } catch (e) {
         console.error("[REPORT] Discord notification failed:", e.message);
     }
@@ -1192,9 +1381,15 @@ export default {
                 }
 
                 // Rate limit
-                const rl = checkRateLimit(`chat:${username}`, 15, 20000);
+                const rl = await consumeRateLimitToken(uid, "kindlechat", accessToken);
                 if (!rl.allowed) {
-                    return new Response(JSON.stringify({ allowed: false, retryAfter: rl.retryAfter }), { status: 429, headers });
+                    return new Response(JSON.stringify({ allowed: false, error: `Rate limit exceeded. Please wait ${rl.retryAfter} second(s) before posting.`, retryAfter: rl.retryAfter }), { status: 429, headers });
+                }
+
+                // Duplicate / repetitive content detection
+                const dupCheck = await checkUserRecentContent(uid, "kindlechat", trimmed, accessToken);
+                if (dupCheck.duplicate) {
+                    return new Response(JSON.stringify({ allowed: false, error: "You already sent this recently. Please wait a few minutes.", retryAfter: dupCheck.retryAfter }), { status: 429, headers });
                 }
 
                 // Moderation
@@ -1241,6 +1436,13 @@ export default {
 
                 console.log("[WORKER] kindlechat post — token claims:", { email: payload.email, ageVerified: payload.ageVerified, moderator: payload.moderator, aud: payload.aud });
                 const result = await rtdbPushWithAccessToken("kindlechat/messages", msgData, accessToken);
+
+                // Record this text for duplicate detection (non-blocking)
+                if (trimmed) {
+                    recordUserRecentContent(uid, "kindlechat", trimmed, accessToken).catch(e => console.error("[DEDUPE] record failed:", e.message));
+                    cleanupUserRecentContent(uid, "kindlechat", accessToken).catch(e => console.error("[DEDUPE] cleanup failed:", e.message));
+                }
+
                 return new Response(JSON.stringify({ allowed: true, key: result.name }), { status: 200, headers });
             }
 
@@ -1293,33 +1495,16 @@ export default {
                     }
                 }
 
-                // Rate limit: 1 topic per day
-                if (!isAdmin) {
-                    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-                    const queryResp = await fetch(`https://firestore.googleapis.com/v1/projects/rekindle-socials/databases/(default)/documents:runQuery`, {
-                        method: "POST",
-                        headers: { "Authorization": `Bearer ${accessToken}`, "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                            structuredQuery: {
-                                from: [{ collectionId: "topics" }],
-                                where: {
-                                    compositeFilter: {
-                                        op: "AND",
-                                        filters: [
-                                            { fieldFilter: { field: { fieldPath: "authorId" }, op: "EQUAL", value: { stringValue: uid } } },
-                                            { fieldFilter: { field: { fieldPath: "timestamp" }, op: "GREATER_THAN", value: { timestampValue: oneDayAgo } } }
-                                        ]
-                                    }
-                                },
-                                limit: 1
-                            }
-                        })
-                    });
-                    const queryData = await queryResp.json();
-                    const hasRecent = Array.isArray(queryData) && queryData.some(d => d.document);
-                    if (hasRecent) {
-                        return new Response(JSON.stringify({ error: "You are limited to creating 1 topic per day." }), { status: 429, headers });
-                    }
+                // Rate limit: token bucket (no bypass)
+                const rl = await consumeRateLimitToken(uid, "topic", accessToken);
+                if (!rl.allowed) {
+                    return new Response(JSON.stringify({ error: `Rate limit exceeded. You can create ${RATE_LIMIT_CONFIG.topic.capacity} topics every ${Math.round(RATE_LIMIT_CONFIG.topic.refillMs / 3600000)} hours. Please wait ${rl.retryAfter} second(s).`, retryAfter: rl.retryAfter }), { status: 429, headers });
+                }
+
+                // Duplicate / repetitive content detection
+                const dupCheck = await checkUserRecentContent(uid, "topic", title + " " + subheading, accessToken);
+                if (dupCheck.duplicate) {
+                    return new Response(JSON.stringify({ error: "You already posted a topic like this recently. Please wait a few minutes.", retryAfter: dupCheck.retryAfter }), { status: 429, headers });
                 }
 
                 // Moderation
@@ -1370,6 +1555,18 @@ export default {
                 }
 
                 const commentText = rawBody.replace(/(\n\s*){3,}/g, "\n\n").trim();
+
+                // Rate limit: token bucket (no bypass) - matches kindlechat rates
+                const rl = await consumeRateLimitToken(uid, "topic_comment", accessToken);
+                if (!rl.allowed) {
+                    return new Response(JSON.stringify({ error: `Rate limit exceeded. Please wait ${rl.retryAfter} second(s) before commenting.`, retryAfter: rl.retryAfter }), { status: 429, headers });
+                }
+
+                // Duplicate / repetitive content detection
+                const dupCheck = await checkUserRecentContent(uid, "topic_comment", commentText, accessToken);
+                if (dupCheck.duplicate) {
+                    return new Response(JSON.stringify({ error: "You already sent this comment recently. Please wait a few minutes.", retryAfter: dupCheck.retryAfter }), { status: 429, headers });
+                }
 
                 // Moderation
                 const mod = await moderateContent(commentText, env.OPENAI_API_KEY);
@@ -1431,6 +1628,18 @@ export default {
                     return new Response(JSON.stringify({ error: "Promotional content is not allowed." }), { status: 400, headers });
                 }
 
+                // Rate limit: token bucket (no bypass)
+                const rl = await consumeRateLimitToken(uid, "neighbourhood_post", accessToken);
+                if (!rl.allowed) {
+                    return new Response(JSON.stringify({ error: `Rate limit exceeded. Please wait ${rl.retryAfter} second(s) before posting.`, retryAfter: rl.retryAfter }), { status: 429, headers });
+                }
+
+                // Duplicate / repetitive content detection
+                const dupCheck = await checkUserRecentContent(uid, "neighbourhood_post", trimmed, accessToken);
+                if (dupCheck.duplicate) {
+                    return new Response(JSON.stringify({ error: "You already posted this recently. Please wait a few minutes.", retryAfter: dupCheck.retryAfter }), { status: 429, headers });
+                }
+
                 // Moderation
                 const mod = await moderateContent(trimmed, env.OPENAI_API_KEY);
                 if (mod.flagged) {
@@ -1463,6 +1672,18 @@ export default {
                 }
                 if (containsPromotedTerm(trimmed)) {
                     return new Response(JSON.stringify({ error: "Promotional content is not allowed." }), { status: 400, headers });
+                }
+
+                // Rate limit: token bucket (no bypass)
+                const rl = await consumeRateLimitToken(uid, "neighbourhood_comment", accessToken);
+                if (!rl.allowed) {
+                    return new Response(JSON.stringify({ error: `Rate limit exceeded. Please wait ${rl.retryAfter} second(s) before commenting.`, retryAfter: rl.retryAfter }), { status: 429, headers });
+                }
+
+                // Duplicate / repetitive content detection
+                const dupCheck = await checkUserRecentContent(uid, "neighbourhood_comment", trimmed, accessToken);
+                if (dupCheck.duplicate) {
+                    return new Response(JSON.stringify({ error: "You already sent this comment recently. Please wait a few minutes.", retryAfter: dupCheck.retryAfter }), { status: 429, headers });
                 }
 
                 // Moderation
@@ -1502,10 +1723,10 @@ export default {
                     return new Response(JSON.stringify({ error: "Content snapshot is too long (max 2000 characters)." }), { status: 400, headers });
                 }
                 
-                // Rate limit: 5 reports per hour per user
-                const rl = checkRateLimit(`report:${uid}`, 5, 3600000);
+                // Rate limit: token bucket (no bypass)
+                const rl = await consumeRateLimitToken(uid, "report", accessToken);
                 if (!rl.allowed) {
-                    return new Response(JSON.stringify({ error: "Rate limit exceeded. You can submit up to 5 reports per hour." }), { status: 429, headers });
+                    return new Response(JSON.stringify({ error: `Rate limit exceeded. You can submit up to ${RATE_LIMIT_CONFIG.report.capacity} reports per hour. Please wait ${rl.retryAfter} second(s).`, retryAfter: rl.retryAfter }), { status: 429, headers });
                 }
                 
                 // Check if another user already reported this content
