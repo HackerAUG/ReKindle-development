@@ -333,7 +333,7 @@ The project uses **two separate Firebase projects**. You must know which one you
 *   **Used by:** Social apps — KindleChat, Neighbourhood, Topics, Flipbook, Pixel, Moderation. Any HTML file using `projectId: "rekindle-socials"`.
 *   **Config:** `firebase-social.json`
 *   **Firestore Rules:** `firestore-social.rules` — topics, neighbourhood posts/comments.
-*   **RTDB Rules:** `rtdb-social-rules.json` — KindleChat messages, translations, user limits.
+*   **RTDB Rules:** `rtdb-social-rules.json` — KindleChat messages, translations, server-side rate limits (`kindlechat/server_rate_limits`), and per-user duplicate-detection cache (`kindlechat/user_recent`).
 *   **Cloud Functions:** Same `firebase-functions/index.js` (initialized as secondary `socialAdminApp`).
 
 #### Rule Update Checklist
@@ -348,6 +348,38 @@ When adding a new feature that writes to Firebase, you **must** update the corre
 | Social RTDB (chat messages) | `rtdb-social-rules.json` |
 
 Without matching rules, writes will be **silently rejected** by security rules. Always follow the existing patterns in the target file for authenticated-user-only collections.
+
+### 9. Server-Side Rate Limiting & Duplicate Detection (`rekindle-moderate` Worker)
+
+The moderation worker enforces **global, per-user token-bucket rate limits** using the social RTDB, so the limits are shared across all Cloudflare Worker isolates and cannot be bypassed by parallel requests, different regions, or extracted tokens used outside the app.
+
+#### Rate-limit data model
+*   **Bucket path:** `kindlechat/server_rate_limits/{uid}/{contentType}`
+*   **Bucket shape:** `{ tokens: number, lastRefill: number, updatedAt: number }`
+*   **Concurrency:** RTDB REST `ETag` / `If-Match` optimistic locking with retry on `412` conflicts.
+
+#### Configured limits
+| Content type | Capacity | Refill rate |
+| :--- | :--- | :--- |
+| `kindlechat` | 5 | 1 token / 12 s |
+| `topic` | 3 | 1 token / 8 h |
+| `topic_comment` | 5 | 1 token / 12 s |
+| `neighbourhood_post` | 5 | 1 token / 5 min |
+| `neighbourhood_comment` | 10 | 1 token / 30 s |
+| `report` | 5 | 1 token / 12 min |
+
+#### Duplicate / repetitive-content detection
+*   **Path:** `kindlechat/user_recent/{uid}/{contentType}/{hash}`
+*   **Hash:** Normalized text (lowercased, punctuation stripped, whitespace collapsed) run through DJB2.
+*   **Window:** 5 minutes.
+*   Repeated identical or near-identical text within the window is rejected with a `429` error.
+
+#### Important rules
+*   No user bypasses the limits — not even `ukiyo@rekindle.ink` or moderators.
+*   These paths are **service-account writable only** in `rtdb-social-rules.json`.
+
+#### Firebase RTDB Script Gotcha
+Only include `firebase-database-compat.js` on pages that actually use Realtime Database (presence, matchmaking, chat, sessions, etc.). Pages that only need Auth/Firestore/Functions (such as `login.html`) should omit it. Loading RTDB unnecessarily can trigger `SafariExtensionMessageEvent` duplicate-variable errors in browsers with certain Safari extensions installed, and it causes extra polling connections to `*.firebaseio.com` that may log CORS/network errors even when the user is authenticated.
 
 ### 8. URL / Link Blocking in Social Apps
 All social apps (KindleChat, Neighbourhood, Topics) block users from posting URLs and links. This is enforced **both client-side and server-side** (moderation worker).
@@ -411,7 +443,7 @@ Users can report content across all social apps. Reports are stored in Firestore
 - **Client Module:** `js/reports.js` — provides `rekindleOpenReportModal()` with System 7 styling
 - **Backend Handler:** `workers/rekindle-moderate/worker.js` handles `type: "report"` requests
 - **Storage:** Firestore `reports` collection (social project: `rekindle-socials`)
-- **Notifications:** Discord webhook via `DISCORD_WEBHOOK_URL` environment variable. Fires on every report submission. Includes action buttons (Delete, Timeout, Dismiss) for manual moderation.
+- **Notifications:** Discord bot via `DISCORD_BOT_TOKEN` and `DISCORD_CHANNEL_ID` environment variables. Fires on every report submission. Includes action buttons (Delete, Timeout, Dismiss) for manual moderation.
 
 ### Data Model (`reports` collection)
 ```javascript
@@ -441,8 +473,14 @@ Users can report content across all social apps. Reports are stored in Firestore
 - `moderation.html` — added "User Reports" panel with pending/resolved/dismissed filters
 - `firestore-social.rules` — added `reports` collection rules
 
-### Discord Webhook
-Set `DISCORD_WEBHOOK_URL` as a Cloudflare Worker environment variable. **No fallback** — if not set, notifications are silently skipped. Never commit the webhook URL to the repository — use environment variables.
+### Discord Bot Setup
+Set `DISCORD_BOT_TOKEN` and `DISCORD_CHANNEL_ID` as Cloudflare Worker environment variables. **No fallback** — if not set, notifications are silently skipped. Never commit the bot token to the repository — use environment variables.
+
+**Setup Steps:**
+1. Create a Discord bot at [Discord Developer Portal](https://discord.com/developers/applications)
+2. Go to "Bot" tab → Click "Reset Token" → Copy the token
+3. Invite the bot to your server with "Send Messages", "Embed Links", and "Use Application Commands" permissions
+4. Set `DISCORD_BOT_TOKEN` and `DISCORD_CHANNEL_ID` as Cloudflare Worker secrets
 
 **Auto-Deletion:** When 2 different users report the same content (same `contentType` + `contentId`), the content is automatically deleted and both reports are marked as "resolved". The Discord notification will show a green embed indicating the auto-deletion.
 
