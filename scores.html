@@ -399,6 +399,7 @@
             { name: "NBA", slug: "basketball/nba" },
             { name: "MLB", slug: "baseball/mlb" },
             { name: "NHL", slug: "hockey/nhl" },
+            { name: "NRL", slug: "nrl", source: "nrl-scores" },
             { name: "EPL", slug: "soccer/eng.1" },
             { name: "MLS", slug: "soccer/usa.1" },
             { name: "NCAA Football", slug: "football/college-football" },
@@ -596,6 +597,16 @@
         }
 
         async function fetchFromAPI(leagueSlug) {
+            const league = LEAGUES.find(l => l.slug === leagueSlug);
+
+            if (league && league.source === 'nrl-scores') {
+                const res = await fetch('/api/nrl-scores');
+                if (!res.ok) {
+                    throw new Error("Network error " + res.status);
+                }
+                return await res.json();
+            }
+
             const apiUrl = `https://site.api.espn.com/apis/site/v2/sports/${leagueSlug}/scoreboard`;
 
             // Using internal Cloudflare worker proxy
